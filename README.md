@@ -1,6 +1,6 @@
 BukuTamu (CodeIgniter HMVC) — README (Notepad)
 ==================================================
-Aplikasi Buku Tamu/PST dengan arsitektur CodeIgniter 3 + HMVC (Modular Extensions MX).
+Aplikasi Buku Tamu Front Office/PST dengan arsitektur CodeIgniter 3 + HMVC (Modular Extensions MX).
 Dokumen ini merangkum struktur, modul, serta langkah instalasi & konfigurasi berdasarkan tree yang Anda kirim.
 
 Ringkasan
@@ -164,3 +164,4 @@ Catatan
 --------------------------------------------------
 Dokumen ini disusun berdasar struktur yang Anda kirim (tanpa membaca kode internal).
 Silakan sesuaikan nama rute, field DB, dan detail proses sesuai implementasi Anda.
+
