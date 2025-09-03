@@ -169,6 +169,4 @@ Tambahkan file LICENSE (MIT/Apache-2.0) jika dipublikasikan.
    ```
 4. Push branch & buka Pull Request.
 
----
 
-> 📌 Dokumen ini berdasarkan struktur proyek yang diberikan, bukan analisis penuh kode internal. Sesuaikan rute, skema DB, dan proses bisnis sesuai implementasi aktual.
