@@ -33,8 +33,24 @@ class M_admin extends CI_Model
             'pengaduan' => $this->input->post('pengaduan')
         ];
 
+        // simpan ke tabel tamdes_buku
         $this->db->insert('tamdes_buku', $data);
+
+        // buat id kunjungan baru
+        $new_id_kunjungan = uniqid('kunj_');
+        $this->db->insert('tamdes_kunjungan', [
+            'id_kunjungan'   => $new_id_kunjungan,
+            'id_user'        => $new_id_user,
+            'date_visit'     => date('Y-m-d H:i:s'),
+            'jenis_layanan'  => ' ', // default kosong (belum dipilih)
+            'status'         => 'baru'
+        ]);
+
+        // simpan id ke session (supaya controller Layanan bisa update)
+        $this->session->set_userdata('id_user', $new_id_user);
+        $this->session->set_userdata('id_kunjungan', $new_id_kunjungan);
     }
+
 
     public function update_tamu($id_user)
     {
@@ -57,12 +73,10 @@ class M_admin extends CI_Model
         $this->db->update('tamdes_buku', $data);
     }
 
-    public function count_kunjungan_today() {
-        $today = date('Y-m-d');
-        $this->db->where('DATE(date_visit)', $today);
-        return $this->db->count_all_results('tamdes_kunjungan');
-    }
-    
+    public function count_kunjungan_today() { 
+        $today = date('Y-m-d'); 
+        $this->db->where('DATE(date_visit)', $today); 
+        return $this->db->count_all_results('tamdes_kunjungan'); }
     
     public function count_kunjungan_bulan_ini() {
         $this->db->where('MONTH(date_visit)', date('m'));

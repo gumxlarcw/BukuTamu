@@ -76,12 +76,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script>
         qz.security.setCertificatePromise(() => {
-            return fetch("https://bukutamu.gumxlarcw.id/assets/qz/qz-certificate.pem").then(res => res.text());
+            return fetch("https://bukutamu.bpsmalut.com/assets/qz/qz-certificate.pem").then(res => res.text());
         });
 
         qz.security.setSignaturePromise(function(toSign) {
             return function(resolve, reject) {
-                fetch("https://bukutamu.gumxlarcw.id/assets/qz/sign.php?request=" + encodeURIComponent(toSign))
+                fetch("https://bukutamu.bpsmalut.com/assets/qz/sign.php?request=" + encodeURIComponent(toSign))
                     .then(res => res.text())
                     .then(sig => {
                         console.log("🔏 Signature berhasil:", sig.substring(0, 20) + "...");
