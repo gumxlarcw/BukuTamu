@@ -23,7 +23,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 | a PHP script and you can easily do that on your own.
 |
 */
-$config['base_url'] = 'https://bukutamu.bpsmalut.com/';
+$config['base_url'] = 'https://bukutamu.bpsmalut.com';
 
 /*
 |--------------------------------------------------------------------------
@@ -223,7 +223,7 @@ $config['allow_get_array'] = TRUE;
 | your log files will fill up very fast.
 |
 */
-$config['log_threshold'] = 0;
+$config['log_threshold'] = 2;
 
 /*
 |--------------------------------------------------------------------------
@@ -324,7 +324,7 @@ $config['cache_query_string'] = FALSE;
 | https://codeigniter.com/user_guide/libraries/encryption.html
 |
 */
-$config['encryption_key'] = '';
+$config['encryption_key'] = getenv('CI_ENCRYPTION_KEY') ?: '';
 
 /*
 |--------------------------------------------------------------------------
@@ -403,8 +403,9 @@ $config['sess_regenerate_destroy'] = FALSE;
 $config['cookie_prefix']	= '';
 $config['cookie_domain']	= '';
 $config['cookie_path']		= '/';
-$config['cookie_secure']	= FALSE;
-$config['cookie_httponly'] 	= FALSE;
+$config['cookie_secure']	= (strpos($config['base_url'], 'https://') === 0);
+$config['cookie_httponly'] 	= TRUE;
+$config['cookie_samesite'] = 'Lax';
 
 /*
 |--------------------------------------------------------------------------
@@ -448,12 +449,16 @@ $config['global_xss_filtering'] = FALSE;
 | 'csrf_regenerate' = Regenerate token on every submission
 | 'csrf_exclude_uris' = Array of URIs which ignore CSRF checks
 */
-$config['csrf_protection'] = FALSE;
+$config['csrf_protection'] = TRUE;
 $config['csrf_token_name'] = 'csrf_test_name';
 $config['csrf_cookie_name'] = 'csrf_cookie_name';
 $config['csrf_expire'] = 7200;
 $config['csrf_regenerate'] = TRUE;
-$config['csrf_exclude_uris'] = array();
+$config['csrf_exclude_uris'] = array(
+	'recognize/save',
+	'selamat_datang/masuk',
+	'api/.*'  // Exclude all API routes from CSRF
+);
 
 /*
 |--------------------------------------------------------------------------

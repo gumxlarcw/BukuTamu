@@ -67,3 +67,30 @@ $route['admin/daftar_kunjungan'] = 'admin/daftar_kunjungan';
 $route['admin/detail_kunjungan/(:num)'] = 'admin/detail_kunjungan/$1';
 
 $route['antrian/cetak/(:any)'] = 'selamat_datang/antrian/cetak/$1';
+
+// API Routes
+$route['api/auth/check'] = 'api/auth/check';
+$route['api/auth/login'] = 'api/auth/login';
+$route['api/auth/logout'] = 'api/auth/logout';
+$route['api/guests'] = 'api/guests/index';
+$route['api/guests/(:num)'] = 'api/guests/detail/$1';
+$route['api/visits'] = 'api/visits/index';
+$route['api/visits/(:num)'] = 'api/visits/detail/$1';
+$route['api/visits/(:num)/status'] = 'api/visits/status/$1';
+$route['api/visits/(:num)/service'] = 'api/visits/service/$1';
+$route['api/visits/(:num)/summary'] = 'api/visits/summary/$1';
+$route['api/consultations'] = 'api/consultations/index';
+$route['api/consultations/(:num)/call'] = 'api/consultations/call/$1';
+$route['api/consultations/(:num)/test-sound'] = 'api/consultations/test_sound/$1';
+$route['api/consultations/(:num)/data'] = 'api/consultations/data/$1';
+$route['api/consultations/(:num)'] = 'api/consultations/detail/$1';
+$route['api/evaluations/pending'] = 'api/evaluations/pending';
+$route['api/evaluations/(:num)/results'] = 'api/evaluations/results/$1';
+$route['api/evaluations/(:num)'] = 'api/evaluations/detail/$1';
+$route['api/dashboard/stats'] = 'api/dashboard/stats';
+$route['api/dashboard/events'] = 'api/dashboard/events';
+$route['api/services'] = 'api/services/index';
+$route['api/kiosk/face-data'] = 'api/kiosk/face_data';
+$route['api/kiosk/register'] = 'api/kiosk/register';
+$route['api/kiosk/visit'] = 'api/kiosk/visit';
+$route['api/kiosk/ticket/(:num)'] = 'api/kiosk/ticket/$1';
