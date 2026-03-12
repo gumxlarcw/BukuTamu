@@ -1,120 +1,68 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { AuthProvider } from '@/providers/AuthProvider'
+import { ThemeProvider } from '@/providers/ThemeProvider'
+import { QueryProvider } from '@/providers/QueryProvider'
+import { KioskLayout } from '@/layouts/KioskLayout'
+import { AdminLayout } from '@/layouts/AdminLayout'
+import { lazy, Suspense } from 'react'
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+
+const WelcomePage = lazy(() => import('@/pages/kiosk/WelcomePage'))
+const StatusSelectPage = lazy(() => import('@/pages/kiosk/StatusSelectPage'))
+const ServiceSelectPage = lazy(() => import('@/pages/kiosk/ServiceSelectPage'))
+const VisitorFormPage = lazy(() => import('@/pages/kiosk/VisitorFormPage'))
+const FaceCapturePage = lazy(() => import('@/pages/kiosk/FaceCapturePage'))
+const FaceRecognizePage = lazy(() => import('@/pages/kiosk/FaceRecognizePage'))
+const TicketPage = lazy(() => import('@/pages/kiosk/TicketPage'))
+const EvaluationStandbyPage = lazy(() => import('@/pages/kiosk/EvaluationStandbyPage'))
+const EvaluationPage = lazy(() => import('@/pages/kiosk/EvaluationPage'))
+const LoginPage = lazy(() => import('@/pages/admin/LoginPage'))
+const DashboardPage = lazy(() => import('@/pages/admin/DashboardPage'))
+const GuestListPage = lazy(() => import('@/pages/admin/GuestListPage'))
+const GuestAddPage = lazy(() => import('@/pages/admin/GuestAddPage'))
+const ConsultationQueuePage = lazy(() => import('@/pages/admin/ConsultationQueuePage'))
+const ConsultationFormPage = lazy(() => import('@/pages/admin/ConsultationFormPage'))
+const VisitLogPage = lazy(() => import('@/pages/admin/VisitLogPage'))
+const ManualEntryPage = lazy(() => import('@/pages/admin/ManualEntryPage'))
+const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    <BrowserRouter>
+      <QueryProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <Suspense fallback={<LoadingSpinner className="min-h-screen" />}>
+              <Routes>
+                <Route element={<KioskLayout />}>
+                  <Route path="/kiosk" element={<WelcomePage />} />
+                  <Route path="/kiosk/status" element={<StatusSelectPage />} />
+                  <Route path="/kiosk/service" element={<ServiceSelectPage />} />
+                  <Route path="/kiosk/form" element={<VisitorFormPage />} />
+                  <Route path="/kiosk/capture" element={<FaceCapturePage />} />
+                  <Route path="/kiosk/recognize" element={<FaceRecognizePage />} />
+                  <Route path="/kiosk/ticket/:id" element={<TicketPage />} />
+                </Route>
+                <Route path="/kiosk/evaluasi" element={<EvaluationStandbyPage />} />
+                <Route path="/kiosk/evaluasi/:id" element={<EvaluationPage />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route element={<AdminLayout />}>
+                  <Route path="/admin" element={<DashboardPage />} />
+                  <Route path="/admin/guests" element={<GuestListPage />} />
+                  <Route path="/admin/guests/add" element={<GuestAddPage />} />
+                  <Route path="/admin/consultations" element={<ConsultationQueuePage />} />
+                  <Route path="/admin/consultations/:id/form" element={<ConsultationFormPage />} />
+                  <Route path="/admin/visits" element={<VisitLogPage />} />
+                  <Route path="/admin/manual-entry" element={<ManualEntryPage />} />
+                </Route>
+                <Route path="/" element={<WelcomePage />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Routes>
+            </Suspense>
+          </AuthProvider>
+        </ThemeProvider>
+      </QueryProvider>
+    </BrowserRouter>
   )
 }
 
