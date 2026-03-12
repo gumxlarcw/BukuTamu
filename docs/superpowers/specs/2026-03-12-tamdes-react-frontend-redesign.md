@@ -431,14 +431,14 @@ Dark mode:
   - `wilayah_data` — text (geographic area)
   - `tahun_awal` — number (start year)
   - `tahun_akhir` — number (end year)
-  - `level_data` — select: Nasional, Provinsi, Kabupaten/Kota, Kecamatan, Desa/Kelulahan, Individu, Lainnya
-  - `periode_data` — select: Sepuluh Tahunan, Lima Tahunan, Tahunan, Semesteran, Triwulanan, Bulanan, Mingguan, Harian, Lainnya, Tidak Berkala
+  - `level_data` — select: 1=Nasional, 2=Provinsi, 3=Kabupaten/Kota, 4=Kecamatan, 5=Desa/Kelurahan, 6=Individu, 7=Lainnya
+  - `periode_data` — select: 1=Sepuluh Tahunan, 2=Lima Tahunan, 3=Tiga Tahunan, 4=Tahunan, 5=Semesteran, 6=Triwulanan, 7=Bulanan, 8=Mingguan, 9=Harian, 10=Lainnya
   - `status_data` — select: 1=Ya sesuai, 2=Ya tidak sesuai, 3=Tidak diperoleh, 4=Belum Diperoleh
   - `jenis_publikasi` — select (conditional, shown when status_data=1 or 2): Publikasi, Data Mikro, Peta, Tabulasi Data, Tabel di Website
   - `judul_publikasi` — text (conditional, shown when status_data=1 or 2)
   - `tahun_publikasi` — number (conditional, shown when status_data=1 or 2)
   - `digunakan_nasional` — select: 1=Ya, 2=Tidak (conditional, shown when status_data=1 or 2)
-- `kualitas` — star rating (overall data quality assessment, per consultation not per row)
+- `kualitas` — star rating (per row, conditional — shown when status_data=1 or 2)
 - UI: modal to add/edit a row, table displays all rows, inline delete
 - Save → POST /api/consultations/:id/data (sends array of kebutuhan_data[])
 
