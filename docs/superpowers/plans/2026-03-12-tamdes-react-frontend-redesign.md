@@ -551,14 +551,49 @@ export const authApi = {
 
 - [ ] **Step 3: Create remaining API modules**
 
-Create `src/api/guests.ts`, `src/api/visits.ts`, `src/api/consultations.ts`, `src/api/evaluations.ts`, `src/api/dashboard.ts`, `src/api/services.ts`, `src/api/kiosk.ts` — each wrapping the corresponding API endpoints from the spec (Section 5). All use `apiClient` and return typed responses.
+Create each module wrapping the corresponding spec endpoints. All use `apiClient` and return typed responses.
 
-Key patterns:
-- List endpoints accept filter params
-- Mutations use POST/PUT/DELETE
-- All return `ApiResponse<T>` or `PaginatedResponse<T>`
+`src/api/guests.ts`:
+- `list(params: {search?, page?, limit?})` → GET /api/guests
+- `get(id)` → GET /api/guests/:id
+- `create(data)` → POST /api/guests
+- `update(id, data)` → PUT /api/guests/:id
+- `delete(id)` → DELETE /api/guests/:id
 
-See spec Section 5 for all endpoint signatures.
+`src/api/visits.ts`:
+- `list(params: {q?, layanan?, tahun?, bulan?, page?, limit?})` → GET /api/visits
+- `get(id)` → GET /api/visits/:id
+- `create(data: {guest_id, jenis_layanan})` → POST /api/visits
+- `updateStatus(id, status)` → PUT /api/visits/:id/status
+- `updateService(id, jenis_layanan)` → PUT /api/visits/:id/service
+- `updateSummary(id, ringkasan)` → PUT /api/visits/:id/summary
+
+`src/api/consultations.ts`:
+- `list()` → GET /api/consultations
+- `updateStatus(id, status)` → PUT /api/consultations/:id
+- `call(id)` → POST /api/consultations/:id/call
+- `testSound(id)` → POST /api/consultations/:id/test-sound
+- `getData(id)` → GET /api/consultations/:id/data
+- `saveData(id, kebutuhan_data[])` → POST /api/consultations/:id/data
+
+`src/api/evaluations.ts`:
+- `getPending()` → GET /api/evaluations/pending
+- `getForm(id)` → GET /api/evaluations/:id
+- `submit(id, data: EvaluationSubmission)` → POST /api/evaluations/:id
+- `getResults(id)` → GET /api/evaluations/:id/results
+
+`src/api/dashboard.ts`:
+- `stats(params?: {date_from?, date_to?})` → GET /api/dashboard/stats
+- `events()` → GET /api/dashboard/events
+
+`src/api/services.ts`:
+- `list()` → GET /api/services
+
+`src/api/kiosk.ts`:
+- `getFaceData()` → GET /api/kiosk/face-data
+- `register(data: GuestFormData & {foto, face_descriptor, jenis_layanan})` → POST /api/kiosk/register
+- `visit(data: {guest_id, jenis_layanan})` → POST /api/kiosk/visit
+- `getTicket(id)` → GET /api/kiosk/ticket/:id
 
 - [ ] **Step 4: Commit**
 
@@ -577,7 +612,7 @@ git add . && git commit -m "feat: add API client with all endpoint modules"
 
 - [ ] **Step 1: Create AuthProvider**
 
-`src/providers/AuthProvider.tsx`: Context provider that checks JWT on mount via `authApi.check()`, stores user state, exposes `login()`, `logout()`, `user`, `isLoading`. Custom `useAuth()` hook.
+`src/providers/AuthProvider.tsx`: Context provider that checks JWT on mount via `authApi.check()`, stores user state, exposes `login()`, `logout()`, `user`, `isLoading`. Exports `useAuth()` hook from this file. Note: `src/hooks/useAuth.ts` from the spec's file tree is a re-export: `export { useAuth } from '@/providers/AuthProvider'`.
 
 - [ ] **Step 2: Create ThemeProvider**
 
@@ -820,6 +855,7 @@ git add . && git commit -m "feat: add Visits API controller with CRUD, status, s
 - `index()`: GET → today's queue (all visits for today with guest info).
 - `detail($id)`: PUT → update consultation status.
 - `call($id)`: POST → proxy call to external dashboard-pst.bpsmalut.com/update-antrian via cURL.
+- `test_sound($id)`: POST → proxy test sound request to external dashboard for TV audio test.
 - `data($id)`: GET → get consultation data rows. POST → save array of kebutuhan_data[] (delete existing + re-insert).
 
 - [ ] **Step 2: Commit**
@@ -1066,7 +1102,7 @@ Shadcn Table. Columns: No, Nama, Email, Jenis Kelamin, Pendidikan, Instansi, Aks
 
 - [ ] **Step 2: Implement GuestListPage**
 
-Search input. GuestTable. Pagination. "Tambah Tamu" button.
+Search input. GuestTable. Pagination with configurable rows per page (select: 10, 25, 50, 100, 500, 1000). "Tambah Tamu" button.
 
 - [ ] **Step 3: Implement GuestAddPage**
 
@@ -1092,7 +1128,8 @@ git add . && git commit -m "feat: implement admin GuestListPage and GuestAddPage
 - [ ] **Step 1: Create queue components**
 
 QueueCallButton: calls `consultationsApi.call()` with loading/error states.
-QueueList: card list with queue number, name, service, status, action buttons.
+QueueTestSoundButton: calls `consultationsApi.testSound()` — tests audio on external TV display.
+QueueList: card list with queue number, name, service, status, action buttons (Panggil, Tes Suara ke TV, Mulai Konsultasi, Selesai).
 
 - [ ] **Step 2: Implement ConsultationQueuePage**
 
