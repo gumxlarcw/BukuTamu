@@ -10,6 +10,6 @@ export const consultationsApi = {
   testSound: (id: number) => apiClient.post<ApiResponse<null>>(`/api/consultations/${id}/test-sound`),
   getData: (id: number) =>
     apiClient.get<ApiResponse<ConsultationDataRow[]>>(`/api/consultations/${id}/data`),
-  saveData: (id: number, data: ConsultationDataRow[]) =>
-    apiClient.post<ApiResponse<null>>(`/api/consultations/${id}/data`, { kebutuhan_data: data }),
+  saveData: (id: number, payload: { kebutuhan_data: ConsultationDataRow[]; hasil_konsultasi?: string }) =>
+    apiClient.post<ApiResponse<null>>(`/api/consultations/${id}/data`, payload),
 }

@@ -1,5 +1,5 @@
 export interface Guest {
-  id: number
+  id_user: number
   nama: string
   email: string
   notel: string
@@ -9,7 +9,7 @@ export interface Guest {
   kategori_instansi: number
   nama_instansi: string
   face_descriptor: number[] | null
-  created_at: string
+  tgldatang: string
 }
 
 export interface GuestFormData {

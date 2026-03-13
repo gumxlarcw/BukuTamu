@@ -1,16 +1,17 @@
 export type VisitStatus = 'antri' | 'proses' | 'menunggu_evaluasi' | 'selesai'
 
 export interface Visit {
-  id: number
-  guest_id: number
-  guest_nama: string
-  guest_instansi: string
+  id_kunjungan: number
+  id_user: number
+  nama: string
+  nama_instansi: string
   jenis_layanan: string
-  no_antrian: string | null
+  nomor_antrian: string | null
   status: VisitStatus
-  ringkasan: string | null
-  tgldatang: string
-  created_at: string
+  date_visit: string
+  durasi_detik: number | null
+  selesai_timestamp: string | null
+  rating_pengunjung: number | null
 }
 
 export interface ConsultationDataRow {
