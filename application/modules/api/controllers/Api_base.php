@@ -53,4 +53,21 @@ class Api_base extends CI_Controller {
     protected function get_json_input() {
         return json_decode(file_get_contents('php://input'), true) ?? [];
     }
+
+    protected function generate_queue_number($jenis_layanan) {
+        if (in_array(strtolower($jenis_layanan), ['lainnya', 'keperluan pimpinan'])) {
+            return null;
+        }
+
+        $prefix = strtoupper(substr($jenis_layanan, 0, 1));
+        $today  = date('Y-m-d');
+
+        $count = $this->db->where('DATE(date_visit)', $today)
+                          ->where('jenis_layanan', $jenis_layanan)
+                          ->count_all_results('tamdes_kunjungan');
+
+        $number = $count + 1;
+
+        return $prefix . str_pad($number, 3, '0', STR_PAD_LEFT);
+    }
 }

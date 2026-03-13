@@ -11,7 +11,7 @@ class Evaluations extends Api_base {
         }
 
         $visit = $this->db
-            ->order_by('id_kunjungan', 'DESC')
+            ->order_by('id_kunjungan', 'ASC')
             ->get_where('tamdes_kunjungan', ['status' => 'menunggu_evaluasi'])
             ->row();
 
@@ -50,6 +50,9 @@ class Evaluations extends Api_base {
             if (!$visit) {
                 $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
             }
+
+            // Delete existing evaluation rows to prevent duplicates
+            $this->db->where('id_kunjungan', $id)->delete('tamdes_evaluasi_detail');
 
             // Insert evaluation rows per indicator
             foreach ($kepentingan as $indikator_id => $val_kepentingan) {

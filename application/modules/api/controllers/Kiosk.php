@@ -138,20 +138,4 @@ class Kiosk extends Api_base {
         $this->json_response(['success' => true, 'data' => $ticket, 'message' => 'OK']);
     }
 
-    private function generate_queue_number($jenis_layanan) {
-        if (in_array($jenis_layanan, ['Lainnya', 'Keperluan Pimpinan'])) {
-            return null;
-        }
-
-        $prefix = strtoupper(substr($jenis_layanan, 0, 1));
-        $today  = date('Y-m-d');
-
-        $count = $this->db->where('DATE(date_visit)', $today)
-                          ->where('jenis_layanan', $jenis_layanan)
-                          ->count_all_results('tamdes_kunjungan');
-
-        $number = $count + 1;
-
-        return $prefix . str_pad($number, 3, '0', STR_PAD_LEFT);
-    }
 }
