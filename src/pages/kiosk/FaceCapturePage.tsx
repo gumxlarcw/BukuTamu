@@ -33,7 +33,7 @@ export default function FaceCapturePage() {
       } as Parameters<typeof kioskApi.register>[0]),
     onSuccess: (res) => {
       localStorage.removeItem(STORAGE_KEY)
-      const visitId = res.data.data.visit_id
+      const visitId = res.data.data.id_kunjungan
       navigate(`/kiosk/ticket/${visitId}`)
     },
     onError: (err: Error) => {

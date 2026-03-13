@@ -37,8 +37,8 @@ export function QueueTicket({ ticket, onPrint, isPrinting }: QueueTicketProps) {
       {/* Queue number */}
       <div className="bg-teal-50 border-2 border-teal-200 rounded-2xl py-6 px-4 mb-6">
         <p className="text-teal-600 text-sm font-semibold mb-2">Nomor Antrian</p>
-        {ticket.no_antrian ? (
-          <p className="text-7xl font-black text-teal-600 leading-none">{ticket.no_antrian}</p>
+        {ticket.nomor_antrian ? (
+          <p className="text-7xl font-black text-teal-600 leading-none">{ticket.nomor_antrian}</p>
         ) : (
           <p className="text-2xl font-bold text-gray-500 italic">Langsung Dilayani</p>
         )}
@@ -66,7 +66,7 @@ export function QueueTicket({ ticket, onPrint, isPrinting }: QueueTicketProps) {
           <Clock className="w-5 h-5 text-teal-500 mt-0.5 shrink-0" />
           <div>
             <p className="text-xs text-gray-500 font-medium uppercase">Waktu</p>
-            <p className="font-semibold text-gray-800 text-sm">{formatDateTime(ticket.tgldatang)}</p>
+            <p className="font-semibold text-gray-800 text-sm">{formatDateTime(ticket.date_visit)}</p>
           </div>
         </div>
       </div>

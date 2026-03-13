@@ -30,10 +30,10 @@ export default function FaceRecognizePage() {
   })
 
   const visitMutation = useMutation({
-    mutationFn: (data: { guest_id: number; jenis_layanan: string }) =>
+    mutationFn: (data: { id_user: number; jenis_layanan: string }) =>
       kioskApi.visit(data),
     onSuccess: (res) => {
-      const visitId = res.data.data.visit_id
+      const visitId = res.data.data.id_kunjungan
       navigate(`/kiosk/ticket/${visitId}`)
     },
     onError: (err: Error) => {
@@ -53,7 +53,7 @@ export default function FaceRecognizePage() {
     if (!matchedGuest || !selectedService) return
     setSubmitError(null)
     visitMutation.mutate({
-      guest_id: matchedGuest.id,
+      id_user: matchedGuest.id,
       jenis_layanan: selectedService.name,
     })
   }

@@ -22,22 +22,22 @@ export default function TicketPage() {
   useEffect(() => {
     if (ticket) {
       printTicket({
-        no_antrian: ticket.no_antrian,
+        nomor_antrian: ticket.nomor_antrian,
         nama: ticket.nama,
         jenis_layanan: ticket.jenis_layanan,
-        tgldatang: ticket.tgldatang,
+        date_visit: ticket.date_visit,
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticket?.id])
+  }, [ticket?.id_kunjungan])
 
   const handleReprint = () => {
     if (ticket) {
       printTicket({
-        no_antrian: ticket.no_antrian,
+        nomor_antrian: ticket.nomor_antrian,
         nama: ticket.nama,
         jenis_layanan: ticket.jenis_layanan,
-        tgldatang: ticket.tgldatang,
+        date_visit: ticket.date_visit,
       })
     }
   }

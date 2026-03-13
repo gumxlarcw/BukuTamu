@@ -47,7 +47,7 @@ export function FaceRecognize({ onMatch, onNoMatch }: FaceRecognizeProps) {
     const knownFaces: KnownFace[] = faceData
       .filter(f => f.face_descriptor && f.face_descriptor.length > 0)
       .map(f => ({
-        id: f.guest_id,
+        id: f.id_user,
         nama: f.nama,
         descriptor: new Float32Array(f.face_descriptor),
       }))

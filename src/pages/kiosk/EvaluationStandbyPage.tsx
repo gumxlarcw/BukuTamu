@@ -14,8 +14,8 @@ export default function EvaluationStandbyPage() {
   })
 
   useEffect(() => {
-    if (data?.data?.visit_id) {
-      navigate(`/kiosk/evaluasi/${data.data.visit_id}`)
+    if (data?.data?.id_kunjungan) {
+      navigate(`/kiosk/evaluasi/${data.data.id_kunjungan}`)
     }
   }, [data, navigate])
 

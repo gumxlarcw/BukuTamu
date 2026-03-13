@@ -6,7 +6,7 @@ export const visitsApi = {
   list: (params: { q?: string; layanan?: string; tahun?: string; bulan?: string; page?: number; limit?: number }) =>
     apiClient.get<PaginatedResponse<Visit>>('/api/visits', { params }),
   get: (id: number) => apiClient.get<ApiResponse<Visit>>(`/api/visits/${id}`),
-  create: (data: { guest_id: number; jenis_layanan: string }) =>
+  create: (data: { id_user: number; jenis_layanan: string }) =>
     apiClient.post<ApiResponse<Visit>>('/api/visits', data),
   updateStatus: (id: number, status: VisitStatus) =>
     apiClient.put<ApiResponse<Visit>>(`/api/visits/${id}/status`, { status }),
