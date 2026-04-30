@@ -50,6 +50,12 @@ class Consultations extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
         }
 
+        // Gate: hanya transisi finalisasi (selesai/menunggu_evaluasi) yang dicek per layanan.
+        // Status awal (dipanggil/diproses) bebas — semua role boleh memanggil & mulai.
+        if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
+            $this->require_layanan_role($visit->jenis_layanan);
+        }
+
         $update = ['status' => $status];
 
         if ($status === 'selesai') {
@@ -74,7 +80,7 @@ class Consultations extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
-        $visit = $this->db->select('nomor_antrian')
+        $visit = $this->db->select('nomor_antrian, status')
                           ->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])
                           ->row();
 
@@ -84,6 +90,12 @@ class Consultations extends Api_base {
 
         $nomor  = $visit->nomor_antrian;
         $result = $this->proxy_antrian($nomor);
+
+        // Auto-transition antri → dipanggil. Tidak men-downgrade status yang sudah lebih lanjut.
+        if ($visit->status === 'antri') {
+            $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', ['status' => 'dipanggil']);
+            $this->audit('call_queue', 'visit', $id, ['nomor' => $nomor, 'status_to' => 'dipanggil']);
+        }
 
         $this->json_response($result);
     }
@@ -108,6 +120,13 @@ class Consultations extends Api_base {
             $this->json_response(['success' => true, 'data' => $rows, 'message' => 'OK']);
 
         } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            // Gate: simpan data konsultasi = penyelesaian layanan, harus sesuai role.
+            $visit_check = $this->db->select('jenis_layanan')->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+            if (!$visit_check) {
+                $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+            }
+            $this->require_layanan_role($visit_check->jenis_layanan);
+
             $input            = $this->get_json_input();
             $hasil_konsultasi = $input['hasil_konsultasi'] ?? '';
             $kebutuhan_data   = $input['kebutuhan_data'] ?? [];
@@ -139,6 +158,26 @@ class Consultations extends Api_base {
             }
 
             $saved = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->result();
+
+            // Auto-transition: setelah operator simpan data, lanjutkan visit.
+            // Tujuan tergantung jenis layanan: PST → menunggu_evaluasi, resepsionis → langsung selesai.
+            // Skip kalau visit sudah dilanjut ke menunggu_evaluasi/selesai (idempoten).
+            $visit = $this->db->select('status, jenis_layanan, date_visit')
+                              ->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+            if ($visit && $visit->status !== 'selesai' && $visit->status !== 'menunggu_evaluasi') {
+                $next_status = $this->next_status_after_completion($visit->jenis_layanan);
+                $update = ['status' => $next_status];
+                if ($next_status === 'selesai') {
+                    $selesai_ts = date('Y-m-d H:i:s');
+                    $update['selesai_timestamp'] = $selesai_ts;
+                    if ($visit->date_visit) {
+                        $update['durasi_detik'] = max(0, strtotime($selesai_ts) - strtotime($visit->date_visit));
+                    }
+                }
+                $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
+                $this->audit('save_consultation', 'visit', $id, ['status_from' => $visit->status, 'status_to' => $next_status]);
+            }
+
             $this->json_response(['success' => true, 'data' => $saved, 'message' => 'Data konsultasi berhasil disimpan']);
         } else {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
@@ -155,7 +194,6 @@ class Consultations extends Api_base {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 
         $response  = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);

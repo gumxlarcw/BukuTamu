@@ -11,6 +11,7 @@ class Visits extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $q       = $this->input->get('q');
             $layanan = $this->input->get('layanan');
+            $status  = $this->input->get('status');
             $tahun   = $this->input->get('tahun');
             $bulan   = $this->input->get('bulan');
             $page    = (int) ($this->input->get('page') ?: 1);
@@ -30,7 +31,10 @@ class Visits extends Api_base {
                 $this->db->group_end();
             }
             if ($layanan) {
-                $this->db->where('k.jenis_layanan', $layanan);
+                $this->db->like('k.jenis_layanan', $layanan);
+            }
+            if ($status) {
+                $this->db->where('k.status', $status);
             }
             if ($tahun) {
                 $this->db->where('YEAR(k.date_visit)', $tahun);
@@ -56,22 +60,31 @@ class Visits extends Api_base {
             ]);
 
         } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $input        = $this->get_json_input();
-            $id_user      = $input['id_user'] ?? null;
-            $jenis_layanan = $input['jenis_layanan'] ?? '';
+            $input   = $this->get_json_input();
+            $id_user = $input['id_user'] ?? null;
 
-            if (!$id_user || !$jenis_layanan) {
+            $jenis_layanan_raw = $input['jenis_layanan'] ?? '';
+            $jenis_layanan = is_array($jenis_layanan_raw) ? json_encode($jenis_layanan_raw) : $jenis_layanan_raw;
+
+            if (!$id_user || !$jenis_layanan_raw) {
                 $this->json_response(['success' => false, 'message' => 'id_user dan jenis_layanan diperlukan'], 400);
             }
 
-            $nomor_antrian = $this->generate_queue_number($jenis_layanan);
+            $nomor_antrian = $this->generate_queue_number(is_array($jenis_layanan_raw) ? ($jenis_layanan_raw[0] ?? '') : $jenis_layanan_raw);
+
+            $sarana_raw = $input['sarana'] ?? [];
+            $sarana = is_array($sarana_raw) ? json_encode($sarana_raw) : $sarana_raw;
 
             $data = [
-                'id_user'       => $id_user,
-                'jenis_layanan' => $jenis_layanan,
-                'date_visit'    => date('Y-m-d H:i:s'),
-                'status'        => 'antri',
-                'nomor_antrian' => $nomor_antrian,
+                'id_user'          => $id_user,
+                'jenis_layanan'    => $jenis_layanan,
+                'layanan_lainnya'  => $input['layanan_lainnya'] ?? null,
+                'sarana'           => $sarana,
+                'sarana_lainnya'   => $input['sarana_lainnya'] ?? null,
+                'date_visit'       => date('Y-m-d H:i:s'),
+                'status'           => 'antri',
+                'nomor_antrian'    => $nomor_antrian,
+                'created_by'       => 'admin:' . ($this->current_user->username ?? 'unknown'),
             ];
 
             $this->db->insert('tamdes_kunjungan', $data);
@@ -134,6 +147,11 @@ class Visits extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
         }
 
+        // Gate finalisasi: selesai/menunggu_evaluasi harus dari role yang berhak atas layanan tsb.
+        if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
+            $this->require_layanan_role($visit->jenis_layanan);
+        }
+
         $update = ['status' => $status];
 
         if ($status === 'selesai') {
@@ -146,6 +164,7 @@ class Visits extends Api_base {
         }
 
         $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
+        $this->audit('update_status', 'visit', $id, ['from' => $visit->status, 'to' => $status]);
         $updated = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
 
         $this->json_response(['success' => true, 'data' => $updated, 'message' => 'Status berhasil diupdate']);
@@ -158,17 +177,36 @@ class Visits extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
-        $input         = $this->get_json_input();
-        $jenis_layanan = $input['jenis_layanan'] ?? null;
+        $input = $this->get_json_input();
 
-        if (!$jenis_layanan) {
+        $jenis_layanan_raw = $input['jenis_layanan'] ?? null;
+        if (!$jenis_layanan_raw) {
             $this->json_response(['success' => false, 'message' => 'jenis_layanan diperlukan'], 400);
         }
 
-        $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', ['jenis_layanan' => $jenis_layanan]);
-        $updated = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+        $jenis_layanan = is_array($jenis_layanan_raw) ? json_encode($jenis_layanan_raw) : $jenis_layanan_raw;
+        $sarana_raw = $input['sarana'] ?? [];
+        $sarana = is_array($sarana_raw) ? json_encode($sarana_raw) : $sarana_raw;
 
-        $this->json_response(['success' => true, 'data' => $updated, 'message' => 'Layanan berhasil diupdate']);
+        $old = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+
+        $update = [
+            'jenis_layanan'   => $jenis_layanan,
+            'layanan_lainnya' => $input['layanan_lainnya'] ?? null,
+            'sarana'          => $sarana,
+            'sarana_lainnya'  => $input['sarana_lainnya'] ?? null,
+        ];
+
+        $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
+
+        // Audit only real changes
+        $changes = [];
+        if ($old && $old->jenis_layanan !== $jenis_layanan) $changes['layanan'] = ['from' => $old->jenis_layanan, 'to' => $jenis_layanan];
+        if ($old && $old->sarana !== $sarana) $changes['sarana'] = ['from' => $old->sarana, 'to' => $sarana];
+        if (!empty($changes)) $this->audit('update_service', 'visit', $id, $changes);
+
+        $updated = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+        $this->json_response(['success' => true, 'data' => $updated, 'message' => 'Layanan & sarana berhasil diupdate']);
     }
 
     public function summary($id) {

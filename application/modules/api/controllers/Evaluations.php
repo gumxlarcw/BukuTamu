@@ -35,15 +35,14 @@ class Evaluations extends Api_base {
         } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $input            = $this->get_json_input();
             $skor_keseluruhan = $input['skor_keseluruhan'] ?? null;
-            $kepentingan      = $input['kepentingan'] ?? [];
             $kepuasan         = $input['kepuasan'] ?? [];
 
             if (!$skor_keseluruhan || !is_numeric($skor_keseluruhan) || $skor_keseluruhan < 1 || $skor_keseluruhan > 10) {
                 $this->json_response(['success' => false, 'message' => 'skor_keseluruhan harus antara 1-10'], 400);
             }
 
-            if (!is_array($kepentingan) || !is_array($kepuasan)) {
-                $this->json_response(['success' => false, 'message' => 'kepentingan dan kepuasan harus berupa array'], 400);
+            if (!is_array($kepuasan)) {
+                $this->json_response(['success' => false, 'message' => 'kepuasan harus berupa array'], 400);
             }
 
             $visit = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
@@ -54,16 +53,15 @@ class Evaluations extends Api_base {
             // Delete existing evaluation rows to prevent duplicates
             $this->db->where('id_kunjungan', $id)->delete('tamdes_evaluasi_detail');
 
-            // Insert evaluation rows per indicator
-            foreach ($kepentingan as $indikator_id => $val_kepentingan) {
-                $val_kepuasan = $kepuasan[$indikator_id] ?? null;
-                if (!$val_kepuasan || $val_kepentingan < 1 || $val_kepuasan < 1) continue;
+            // Insert evaluation rows: skala Likert 1-10 untuk kepuasan saja (kepentingan deprecated).
+            foreach ($kepuasan as $indikator_id => $val_kepuasan) {
+                if (!$val_kepuasan || $val_kepuasan < 1 || $val_kepuasan > 10) continue;
 
                 $this->db->insert('tamdes_evaluasi_detail', [
                     'id_kunjungan' => $id,
-                    'indikator_id' => $indikator_id,
-                    'kepentingan'  => $val_kepentingan,
-                    'kepuasan'     => $val_kepuasan,
+                    'indikator_id' => (int) $indikator_id,
+                    'kepentingan'  => null,
+                    'kepuasan'     => (int) $val_kepuasan,
                 ]);
             }
 
@@ -116,25 +114,90 @@ class Evaluations extends Api_base {
         ]);
     }
 
+    /**
+     * GET /api/evaluations/summary — all evaluations with avg scores
+     */
+    public function summary() {
+        $this->require_auth();
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+
+        $tahun = $this->input->get('tahun');
+
+        // Per-visit summary
+        $this->db->select('d.id_kunjungan, b.nama, k.jenis_layanan, k.date_visit, k.rating_pengunjung,
+                           AVG(d.kepentingan) as avg_kepentingan, AVG(d.kepuasan) as avg_kepuasan,
+                           COUNT(d.id) as jumlah_indikator')
+                 ->from('tamdes_evaluasi_detail d')
+                 ->join('tamdes_kunjungan k', 'd.id_kunjungan = k.id_kunjungan')
+                 ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
+                 ->group_by('d.id_kunjungan')
+                 ->order_by('k.date_visit', 'DESC');
+
+        if ($tahun) {
+            $this->db->where('YEAR(k.date_visit)', $tahun);
+        }
+
+        $visits = $this->db->get()->result();
+
+        // Per-indicator average (IKM breakdown)
+        $this->db->select('d.indikator_id, AVG(d.kepentingan) as avg_kepentingan, AVG(d.kepuasan) as avg_kepuasan, COUNT(DISTINCT d.id_kunjungan) as responden')
+                 ->from('tamdes_evaluasi_detail d')
+                 ->join('tamdes_kunjungan k', 'd.id_kunjungan = k.id_kunjungan');
+
+        if ($tahun) {
+            $this->db->where('YEAR(k.date_visit)', $tahun);
+        }
+
+        $indicators = $this->db->group_by('d.indikator_id')->order_by('d.indikator_id', 'ASC')->get()->result();
+
+        // Overall average
+        $this->db->select('AVG(d.kepuasan) as ikm_score, COUNT(DISTINCT d.id_kunjungan) as total_responden')
+                 ->from('tamdes_evaluasi_detail d')
+                 ->join('tamdes_kunjungan k', 'd.id_kunjungan = k.id_kunjungan');
+
+        if ($tahun) {
+            $this->db->where('YEAR(k.date_visit)', $tahun);
+        }
+
+        $overall = $this->db->get()->row();
+
+        $this->json_response([
+            'success' => true,
+            'data'    => [
+                'visits'     => $visits,
+                'indicators' => $indicators,
+                'overall'    => $overall,
+                'labels'     => $this->indikator_list(),
+            ],
+            'message' => 'OK',
+        ]);
+    }
+
+    /**
+     * Blok II. Kepuasan terhadap Pelayanan Data dan Informasi Statistik BPS.
+     * 16 indikator. Skala penilaian: Likert 1-10 (1 = sangat tidak puas, 10 = sangat puas).
+     * Hanya tingkat kepuasan; tingkat kepentingan tidak dipakai lagi.
+     */
     private function indikator_list() {
         return [
-            1  => 'Informasi pelayanan tersedia secara elektronik maupun non-elektronik.',
-            2  => 'Persyaratan pelayanan mudah dipenuhi.',
-            3  => 'Prosedur pelayanan mudah diikuti.',
-            4  => 'Waktu pelayanan sesuai dengan yang ditetapkan.',
-            5  => 'Biaya pelayanan sesuai ketentuan.',
-            6  => 'Produk pelayanan sesuai yang dijanjikan.',
-            7  => 'Sarana prasarana nyaman.',
-            8  => 'Data mudah diakses.',
-            9  => 'Petugas merespon dengan baik.',
-            10 => 'Petugas memberi informasi jelas.',
-            11 => 'Fasilitas pengaduan mudah diketahui.',
-            12 => 'Proses pengaduan jelas dan tidak rumit.',
-            13 => 'Tidak ada diskriminasi pelayanan.',
-            14 => 'Tidak ada kecurangan/pelayanan di luar prosedur.',
-            15 => 'Tidak ada penerimaan gratifikasi.',
-            16 => 'Tidak ada pungutan liar.',
-            17 => 'Tidak ada praktik percaloan.',
+            1  => 'Informasi pelayanan pada unit layanan ini tersedia melalui media elektronik maupun non elektronik.',
+            2  => 'Persyaratan pelayanan yang ditetapkan mudah dipenuhi/disiapkan oleh konsumen.',
+            3  => 'Prosedur/alur pelayanan yang ditetapkan mudah diikuti/dilakukan.',
+            4  => 'Jangka waktu penyelesaian pelayanan yang diterima sesuai dengan yang ditetapkan.',
+            5  => 'Biaya pelayanan yang dibayarkan sesuai dengan biaya yang ditetapkan.',
+            6  => 'Produk pelayanan yang diterima sesuai dengan yang dijanjikan.',
+            7  => 'Sarana dan prasarana pendukung pelayanan memberikan kenyamanan.',
+            8  => 'Data BPS mudah diakses melalui sarana utama yang digunakan.',
+            9  => 'Petugas pelayanan dan/atau aplikasi pelayanan online merespon dengan baik.',
+            10 => 'Petugas pelayanan dan/atau aplikasi pelayanan online mampu memberikan informasi yang jelas.',
+            11 => 'Fasilitas pengaduan PST mudah diakses (contoh: Kotak saran dan pengaduan, website https://webapps.bps.go.id/pengaduan, e-mail bpshq@bps.go.id).',
+            12 => 'Tidak ada diskriminasi dalam pelayanan.',
+            13 => 'Tidak ada pelayanan di luar prosedur/kecurangan pelayanan.',
+            14 => 'Tidak ada penerimaan gratifikasi.',
+            15 => 'Tidak ada pungutan liar (pungli) dalam pelayanan.',
+            16 => 'Tidak ada praktik percaloan dalam pelayanan.',
         ];
     }
 }
