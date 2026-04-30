@@ -1,10 +1,13 @@
 import apiClient from './client'
 import type { ApiResponse } from '@/types/api'
 
+export type UserRole = 'superadmin' | 'admin' | 'operator' | 'resepsionis' | 'petugas_pst'
+
 export interface AuthUser {
   id: number
   username: string
   nama: string
+  role?: UserRole
 }
 
 export const authApi = {

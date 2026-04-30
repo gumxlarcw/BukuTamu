@@ -7,61 +7,56 @@ interface EvaluationFormProps {
   isSubmitting?: boolean
 }
 
-interface StarRatingProps {
+interface LikertScaleProps {
   value: number
   onChange: (val: number) => void
-  max?: number
-  label: string
-  color?: string
 }
 
-function StarRating({ value, onChange, max = 10, label, color = 'text-yellow-400' }: StarRatingProps) {
+function LikertScale({ value, onChange }: LikertScaleProps) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-gray-600">{label}</span>
-      <div className="flex gap-1">
-        {Array.from({ length: max }, (_, i) => i + 1).map(star => (
+    <div>
+      <div className="flex flex-wrap gap-1.5">
+        {Array.from({ length: 10 }, (_, i) => i + 1).map(score => (
           <button
-            key={star}
+            key={score}
             type="button"
-            onClick={() => onChange(star)}
-            className={`text-xl transition-transform hover:scale-110 active:scale-95 ${
-              star <= value ? color : 'text-gray-300'
+            onClick={() => onChange(score)}
+            className={`w-9 h-9 rounded-lg font-semibold text-sm transition-all hover:scale-105 active:scale-95 ${
+              score === value
+                ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30'
+                : 'bg-white/80 text-gray-600 border border-gray-200 hover:border-orange-400'
             }`}
           >
-            ★
+            {score}
           </button>
         ))}
       </div>
-      <span className="text-xs text-gray-500">{value > 0 ? `${value}/10` : '-'}</span>
+      <div className="flex justify-between text-[10px] text-gray-400 mt-1.5 px-1">
+        <span>Sangat tidak puas</span>
+        <span>Sangat puas</span>
+      </div>
     </div>
   )
 }
 
 export function EvaluationForm({ indicators, onSubmit, isSubmitting }: EvaluationFormProps) {
-  const [ratings, setRatings] = useState<Record<number, { importance: number; satisfaction: number }>>(
-    Object.fromEntries(indicators.map(ind => [ind.id, { importance: 0, satisfaction: 0 }]))
+  const [satisfaction, setSatisfaction] = useState<Record<number, number>>(
+    Object.fromEntries(indicators.map(ind => [ind.id, 0])),
   )
   const [overallScore, setOverallScore] = useState(0)
 
-  const updateRating = (id: number, key: 'importance' | 'satisfaction', value: number) => {
-    setRatings(prev => ({
-      ...prev,
-      [id]: { ...prev[id], [key]: value },
-    }))
+  const setScore = (id: number, value: number) => {
+    setSatisfaction(prev => ({ ...prev, [id]: value }))
   }
 
-  const isComplete =
-    overallScore > 0 &&
-    indicators.every(ind => ratings[ind.id]?.importance > 0 && ratings[ind.id]?.satisfaction > 0)
+  const isComplete = overallScore > 0 && indicators.every(ind => (satisfaction[ind.id] ?? 0) > 0)
 
   const handleSubmit = () => {
     if (!isComplete) return
     const data: EvaluationSubmission = {
       indicators: indicators.map(ind => ({
         id: ind.id,
-        importance: ratings[ind.id]?.importance ?? 0,
-        satisfaction: ratings[ind.id]?.satisfaction ?? 0,
+        satisfaction: satisfaction[ind.id] ?? 0,
       })),
       overall_score: overallScore,
     }
@@ -69,36 +64,44 @@ export function EvaluationForm({ indicators, onSubmit, isSubmitting }: Evaluatio
   }
 
   return (
-    <div className="space-y-6 w-full">
-      {/* Indicator ratings */}
-      <div className="space-y-4">
+    <div className="space-y-4 w-full">
+      {/* Block II header */}
+      <div className="bg-orange-50 backdrop-blur-sm rounded-2xl p-4 border border-orange-200">
+        <h2 className="text-sm font-bold text-gray-800 mb-1">
+          Blok II. Kepuasan terhadap Pelayanan Data dan Informasi Statistik BPS
+        </h2>
+        <p className="text-xs text-gray-600 leading-snug">
+          Mohon berikan penilaian tingkat kepuasan Anda untuk masing-masing aspek pelayanan berikut menggunakan
+          skala <span className="font-semibold">1 (sangat tidak puas)</span> sampai
+          <span className="font-semibold"> 10 (sangat puas)</span>.
+        </p>
+      </div>
+
+      {/* Indicator ratings — single column (kepuasan only) */}
+      <div className="space-y-3">
         {indicators.map((indicator, idx) => (
-          <div key={indicator.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <p className="font-semibold text-gray-800 mb-3 text-sm">
+          <div
+            key={indicator.id}
+            className="bg-white/70 backdrop-blur-sm rounded-2xl p-4 border border-gray-200 shadow-sm overflow-hidden"
+          >
+            <p className="font-semibold text-gray-800 mb-2 text-xs break-words leading-snug">
               {idx + 1}. {indicator.label}
             </p>
-            <div className="grid grid-cols-2 gap-4">
-              <StarRating
-                value={ratings[indicator.id]?.importance ?? 0}
-                onChange={val => updateRating(indicator.id, 'importance', val)}
-                label="Kepentingan"
-                color="text-blue-400"
-              />
-              <StarRating
-                value={ratings[indicator.id]?.satisfaction ?? 0}
-                onChange={val => updateRating(indicator.id, 'satisfaction', val)}
-                label="Kepuasan"
-                color="text-yellow-400"
-              />
-            </div>
+            <LikertScale
+              value={satisfaction[indicator.id] ?? 0}
+              onChange={val => setScore(indicator.id, val)}
+            />
           </div>
         ))}
       </div>
 
       {/* Overall score */}
-      <div className="bg-teal-50 rounded-2xl p-6 border-2 border-teal-200">
-        <p className="font-bold text-gray-800 mb-4 text-base">
+      <div className="bg-orange-50 backdrop-blur-sm rounded-2xl p-6 border border-orange-200 overflow-hidden">
+        <p className="font-bold text-gray-800 mb-1 text-base">
           Nilai Kepuasan Keseluruhan
+        </p>
+        <p className="text-xs text-gray-500 mb-4">
+          Penilaian secara umum untuk pelayanan yang Anda terima hari ini.
         </p>
         <div className="flex gap-2 flex-wrap">
           {Array.from({ length: 10 }, (_, i) => i + 1).map(score => (
@@ -108,8 +111,8 @@ export function EvaluationForm({ indicators, onSubmit, isSubmitting }: Evaluatio
               onClick={() => setOverallScore(score)}
               className={`w-12 h-12 rounded-xl font-bold text-lg transition-all hover:scale-105 active:scale-95 ${
                 score === overallScore
-                  ? 'bg-teal-500 text-white shadow-md'
-                  : 'bg-white text-gray-600 border-2 border-gray-200 hover:border-teal-300'
+                  ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
+                  : 'bg-white/70 text-gray-600 border border-gray-200 hover:border-orange-400'
               }`}
             >
               {score}
@@ -117,7 +120,7 @@ export function EvaluationForm({ indicators, onSubmit, isSubmitting }: Evaluatio
           ))}
         </div>
         {overallScore > 0 && (
-          <p className="mt-3 text-teal-700 font-semibold">Nilai: {overallScore}/10</p>
+          <p className="mt-3 text-orange-600 font-semibold">Nilai: {overallScore}/10</p>
         )}
       </div>
 
@@ -127,7 +130,7 @@ export function EvaluationForm({ indicators, onSubmit, isSubmitting }: Evaluatio
         disabled={!isComplete || isSubmitting}
         className={`w-full py-5 rounded-2xl text-xl font-bold transition-all active:scale-95 ${
           isComplete && !isSubmitting
-            ? 'bg-teal-500 hover:bg-teal-400 text-white shadow-xl'
+            ? 'bg-orange-500 hover:bg-orange-400 text-white shadow-xl shadow-orange-500/20'
             : 'bg-gray-200 text-gray-400 cursor-not-allowed'
         }`}
       >

@@ -1,12 +1,11 @@
 export interface EvaluationIndicator {
   id: number
   label: string
-  importance: number
   satisfaction: number
 }
 
 export interface EvaluationSubmission {
-  indicators: { id: number; importance: number; satisfaction: number }[]
+  indicators: { id: number; satisfaction: number }[]
   overall_score: number
 }
 

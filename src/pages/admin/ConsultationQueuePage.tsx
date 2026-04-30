@@ -4,20 +4,31 @@ import { toast } from 'sonner'
 import { consultationsApi } from '@/api/consultations'
 import { QueueList } from '@/components/admin/QueueList'
 import { QueueCallButton } from '@/components/admin/QueueCallButton'
+import { useAuth } from '@/providers/AuthProvider'
+import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion } from '@/lib/role-access'
 import type { Visit } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ExternalLink, Volume2, ClipboardList, CheckCircle } from 'lucide-react'
+import { ExternalLink, Volume2, ClipboardList, CheckCircle, Lock } from 'lucide-react'
 
 export default function ConsultationQueuePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const role = user?.role
 
-  const { data: visits, isLoading } = useQuery({
+  const { data: allVisits, isLoading } = useQuery({
     queryKey: ['consultations-queue'],
     queryFn: () => consultationsApi.list().then(r => r.data.data),
     refetchInterval: 30000,
   })
+
+  // Petugas dengan scope spesifik hanya melihat visit yang relevan dengan rolenya.
+  // Admin/superadmin/operator (legacy) melihat semua.
+  const scopedRoles = role === 'petugas_pst' || role === 'resepsionis'
+  const visits = scopedRoles
+    ? (allVisits ?? []).filter((v: Visit) => canFinalizeLayanan(role, parseLayananForRole(v.jenis_layanan)))
+    : (allVisits ?? [])
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
@@ -38,12 +49,24 @@ export default function ConsultationQueuePage() {
     }
   }
 
+  const handleStart = async (visitId: number, currentStatus: string) => {
+    if (currentStatus === 'antri' || currentStatus === 'dipanggil') {
+      try {
+        await consultationsApi.updateStatus(visitId, 'diproses')
+        queryClient.invalidateQueries({ queryKey: ['consultations-queue'] })
+      } catch {
+        // Non-fatal: lanjut ke form meski transition gagal
+      }
+    }
+    navigate(`/admin/consultations/${visitId}/form`)
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold">Antrian Konsultasi</h1>
-          <p className="text-muted-foreground text-sm">Manajemen antrian layanan hari ini</p>
+          <h1 className="admin-h1">Antrian Konsultasi</h1>
+          <p className="admin-subtitle">Manajemen antrian layanan hari ini</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={handleTestSound}>
@@ -71,7 +94,7 @@ export default function ConsultationQueuePage() {
         </div>
       ) : (
         <QueueList
-          visits={visits ?? []}
+          visits={visits}
           renderActions={(visit: Visit) => (
             <>
               <QueueCallButton
@@ -81,27 +104,45 @@ export default function ConsultationQueuePage() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => navigate(`/admin/consultations/${visit.id_kunjungan}/form`)}
+                onClick={() => handleStart(visit.id_kunjungan, visit.status)}
               >
                 <ClipboardList className="w-3.5 h-3.5 mr-1" />
                 Mulai
               </Button>
               {visit.status !== 'selesai' && visit.status !== 'menunggu_evaluasi' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-green-700 hover:text-green-800 hover:bg-green-50"
-                  onClick={() =>
-                    statusMutation.mutate({
-                      id: visit.id_kunjungan,
-                      status: 'menunggu_evaluasi',
-                    })
-                  }
-                  disabled={statusMutation.isPending}
-                >
-                  <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                  Selesai
-                </Button>
+                canFinalizeLayanan(role, parseLayananForRole(visit.jenis_layanan)) ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-green-700 hover:text-green-800 hover:bg-green-50"
+                    onClick={() =>
+                      statusMutation.mutate({
+                        id: visit.id_kunjungan,
+                        status: nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan)),
+                      })
+                    }
+                    disabled={statusMutation.isPending}
+                    title={
+                      nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan)) === 'selesai'
+                        ? 'Selesai langsung tanpa evaluasi'
+                        : 'Lanjut ke tablet evaluasi'
+                    }
+                  >
+                    <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                    Selesai
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-gray-400 cursor-not-allowed"
+                    disabled
+                    title="Layanan ini di luar kewenangan role Anda"
+                  >
+                    <Lock className="w-3.5 h-3.5 mr-1" />
+                    Selesai
+                  </Button>
+                )
               )}
             </>
           )}
