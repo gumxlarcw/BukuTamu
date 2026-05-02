@@ -1,0 +1,14 @@
+.vscode/
+node_modules/
+assets/
+database.php
+system/
+.php-cs-fixer.cache
+.prettier.js
+.php-cs-fixer.php
+.prettierrc.backup
+package-lock.json
+
+# Local environment variables (do NOT commit secrets)
+.env
+.env.local

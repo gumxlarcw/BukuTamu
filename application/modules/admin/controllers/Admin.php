@@ -35,14 +35,114 @@ class Admin extends CI_Controller {
         $username = $this->input->post('username', TRUE);
         $password = $this->input->post('password', TRUE);
 
-        if ($username === 'admin' && $password === 'admin123') {
-            $this->session->set_userdata('logged_in', TRUE);
-            redirect('admin/dashboard');
-        } else {
+        $envUsername = getenv('ADMIN_USERNAME') ?: '';
+        $envPasswordHash = getenv('ADMIN_PASSWORD_HASH') ?: '';
+
+        // Production: wajib pakai ENV (hindari kredensial hardcoded di repo)
+        if (ENVIRONMENT === 'production') {
+            if ($envUsername === '' || $envPasswordHash === '') {
+                $this->session->set_flashdata('error', 'Konfigurasi admin belum diset. Hubungi administrator.');
+                return redirect('admin');
+            }
+
+            $isValid = hash_equals($envUsername, (string) $username) && password_verify((string) $password, $envPasswordHash);
+            if ($isValid) {
+                $this->session->set_userdata([
+                    'logged_in' => TRUE,
+                    'admin_username' => $envUsername,
+                ]);
+                return redirect('admin/dashboard');
+            }
+
             $this->session->set_flashdata('error', 'Username atau password salah.');
-            redirect('admin');
+            return redirect('admin');
         }
+
+        // Non-production: fallback untuk kemudahan dev jika ENV belum diset
+        $fallbackUsername = ($envUsername !== '') ? $envUsername : 'admin';
+        $isValid = FALSE;
+        if ($envPasswordHash !== '') {
+            $isValid = hash_equals($fallbackUsername, (string) $username) && password_verify((string) $password, $envPasswordHash);
+        } else {
+            $isValid = ($username === $fallbackUsername && $password === 'admin123');
+        }
+
+        if ($isValid) {
+            $this->session->set_userdata([
+                'logged_in' => TRUE,
+                'admin_username' => $fallbackUsername,
+            ]);
+            return redirect('admin/dashboard');
+        }
+
+        $this->session->set_flashdata('error', 'Username atau password salah.');
+        return redirect('admin');
     }
+
+    public function tambah_kunjungan_manual()
+    {
+        $this->check_login();
+
+        $today = date('Y-m-d');
+
+        // daftar tamu hari ini (tidak wajib diubah)
+        $this->db->select('tamdes_buku.id_user, tamdes_buku.nama, tamdes_buku.nama_instansi');
+        $this->db->join('tamdes_kunjungan', 'tamdes_buku.id_user = tamdes_kunjungan.id_user', 'left');
+        $this->db->where('DATE(tamdes_kunjungan.date_visit)', $today);
+        $this->db->group_by('tamdes_buku.id_user');
+        $this->db->order_by('tamdes_buku.nama', 'ASC'); // ✅ urutkan abjad
+        $data['tamu_hari_ini'] = $this->db->get('tamdes_buku')->result();
+
+        // semua tamu untuk dropdown
+        $this->db->order_by('nama', 'ASC'); // ✅ urutkan abjad juga di sini
+        $data['semua_tamu'] = $this->admin->get_all_tamu(); // pastikan model-nya juga support sorting
+        $this->load->view('admin/tambah_kunjungan_manual', $data);
+    }
+
+
+    public function simpan_kunjungan_manual()
+    {
+        $this->check_login();
+
+        $id_user = $this->input->post('id_user', TRUE);
+        $jenis_layanan = $this->input->post('jenis_layanan', TRUE);
+
+        if (!$id_user || !$jenis_layanan) {
+            $this->session->set_flashdata('error', 'Semua field wajib diisi.');
+            redirect('admin/tambah_kunjungan_manual');
+        }
+
+        $data = [
+            'id_user' => $id_user,
+            'jenis_layanan' => $jenis_layanan,
+            'date_visit' => date('Y-m-d H:i:s'),
+            'status' => 'antri',
+            'nomor_antrian' => $this->generate_nomor_antrian($jenis_layanan)
+        ];
+
+        $this->db->insert('tamdes_kunjungan', $data);
+
+        $this->session->set_flashdata('success', 'Kunjungan berhasil ditambahkan secara manual.');
+        redirect('admin/daftar_kunjungan');
+    }
+
+    // Optional helper untuk membuat nomor antrian
+    private function generate_nomor_antrian($jenis_layanan)
+    {
+        // Tidak generate nomor antrian untuk Lainnya & Keperluan Pimpinan
+        if (in_array(strtolower(trim($jenis_layanan)), ['lainnya', 'keperluan pimpinan'])) {
+            return null;
+        }
+        $prefix = strtoupper(substr($jenis_layanan, 0, 1)); // contoh: "P" untuk Perpustakaan
+        $today = date('Y-m-d');
+
+        $this->db->where('DATE(date_visit)', $today);
+        $this->db->where('jenis_layanan', $jenis_layanan);
+        $count = $this->db->count_all_results('tamdes_kunjungan');
+
+        return $prefix . str_pad($count + 1, 3, '0', STR_PAD_LEFT); // contoh: P001
+    }
+
 
     public function logout() {
         $this->session->sess_destroy();
@@ -68,8 +168,8 @@ class Admin extends CI_Controller {
     $data['total_all'] = $this->admin->count_kunjungan_all();
     $data['total_unique'] = $this->admin->count_tamu_unik();
 
-    // Ambil data kunjungan + jenis layanan
-    $this->db->select('tamdes_kunjungan.date_visit, tamdes_kunjungan.jenis_layanan, tamdes_buku.nama');
+    // Ambil data kunjungan + atribut untuk statistik dashboard
+    $this->db->select('tamdes_kunjungan.date_visit, tamdes_kunjungan.jenis_layanan, tamdes_kunjungan.status, tamdes_kunjungan.durasi_detik, tamdes_kunjungan.id_user, tamdes_buku.nama, tamdes_buku.nama_instansi');
     $this->db->from('tamdes_kunjungan');
     $this->db->join('tamdes_buku', 'tamdes_kunjungan.id_user = tamdes_buku.id_user', 'left');
     $kunjungan = $this->db->get()->result();
@@ -83,7 +183,14 @@ class Admin extends CI_Controller {
         $events[] = [
             'title' => $row->nama,
             'start' => date('Y-m-d', strtotime($row->date_visit)),
-            'color' => $color
+            'color' => $color,
+            'extendedProps' => [
+                'id_user' => $row->id_user,
+                'jenis_layanan' => $layanan,
+                'status' => $row->status,
+                'durasi_detik' => $row->durasi_detik,
+                'nama_instansi' => $row->nama_instansi,
+            ],
         ];
     }
 
@@ -96,8 +203,9 @@ class Admin extends CI_Controller {
 
     public function update_jenis_layanan()
     {
-        $id_kunjungan = $this->input->post('id_kunjungan');
-        $jenis_layanan = $this->input->post('jenis_layanan');
+        $this->check_login();
+        $id_kunjungan = $this->input->post('id_kunjungan', TRUE);
+        $jenis_layanan = $this->input->post('jenis_layanan', TRUE);
 
         $this->db->where('id_kunjungan', $id_kunjungan);
         $this->db->update('tamdes_kunjungan', ['jenis_layanan' => $jenis_layanan]);
@@ -108,8 +216,9 @@ class Admin extends CI_Controller {
 
     public function update_ringkasan()
     {
-        $id_kunjungan = $this->input->post('id_kunjungan');
-        $ringkasan = $this->input->post('ringkasan');
+        $this->check_login();
+        $id_kunjungan = $this->input->post('id_kunjungan', TRUE);
+        $ringkasan = $this->input->post('ringkasan', TRUE);
 
         // Jika sudah ada, update
         $existing = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id_kunjungan])->row();
@@ -131,15 +240,58 @@ class Admin extends CI_Controller {
 
     public function update_status_kunjungan()
     {
-        $id_kunjungan = $this->input->post('id_kunjungan');
-        $status = $this->input->post('status');
+        $this->check_login();
+        $id_kunjungan = $this->input->post('id_kunjungan', TRUE);
+        $status = $this->input->post('status', TRUE);
+
+        // Ambil data waktu datang
+        $kunjungan = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id_kunjungan])->row();
+
+        $data = ['status' => $status];
+
+        // ✅ Jika status diset ke selesai, simpan waktu selesai + hitung durasi
+        if ($status === 'selesai') {
+            $selesai = date('Y-m-d H:i:s');
+            $data['selesai_timestamp'] = $selesai;
+
+            // hitung durasi detik
+            $awal  = strtotime($kunjungan->date_visit);
+            $akhir = strtotime($selesai);
+            $durasi = $akhir - $awal;
+            $data['durasi_detik'] = $durasi;
+        }
 
         $this->db->where('id_kunjungan', $id_kunjungan);
-        $this->db->update('tamdes_kunjungan', ['status' => $status]);
+        $this->db->update('tamdes_kunjungan', $data);
 
         $this->session->set_flashdata('success', 'Status kunjungan berhasil diperbarui.');
         redirect('admin/daftar_kunjungan');
     }
+
+    public function delete_kunjungan($id_kunjungan)
+    {
+        $this->check_login();
+
+        // Ambil data kunjungan untuk mengetahui id_user
+        $kunjungan = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id_kunjungan])->row();
+        if (!$kunjungan) {
+            show_404();
+        }
+
+        // Hapus ringkasan/hasil konsultasi jika ada
+        $this->db->delete('konsultasi_pengunjung', ['id_kunjungan' => $id_kunjungan]);
+
+        // Hapus evaluasi jika ada
+        $this->db->delete('tamdes_evaluasi_detail', ['id_kunjungan' => $id_kunjungan]);
+
+        // Hapus kunjungan
+        $this->db->delete('tamdes_kunjungan', ['id_kunjungan' => $id_kunjungan]);
+
+        $this->session->set_flashdata('success', 'Data kunjungan berhasil dihapus.');
+        redirect('admin/daftar_kunjungan');
+    }
+
+
 
     public function daftar_tamu() {
         $this->check_login();
@@ -149,13 +301,13 @@ class Admin extends CI_Controller {
 
     public function tambah() {
         $this->check_login();
-        $this->load->view('admin/tambah');
+        $this->session->set_flashdata('error', 'Pendaftaran tamu wajib melalui scan wajah. Fitur tambah manual dinonaktifkan di Admin Panel.');
+        redirect('admin/daftar_tamu');
     }
 
     public function insert() {
         $this->check_login();
-        $this->admin->insert_tamu();
-        $this->session->set_flashdata('success', 'Data tamu berhasil ditambahkan.');
+        $this->session->set_flashdata('error', 'Pendaftaran tamu wajib melalui scan wajah. Fitur tambah manual dinonaktifkan di Admin Panel.');
         redirect('admin/daftar_tamu');
     }
 
@@ -257,6 +409,7 @@ class Admin extends CI_Controller {
     }
 
     public function aktifkan_evaluasi($id_kunjungan) {
+        $this->check_login();
         $this->db->where('id_kunjungan', $id_kunjungan);
         $this->db->update('tamdes_kunjungan', ['status' => 'menunggu_evaluasi']);
     
@@ -265,10 +418,11 @@ class Admin extends CI_Controller {
 
     public function simpan_konsultasi($id_kunjungan)
     {
+        $this->check_login();
         $this->load->database();
 
-        $hasil_konsultasi = $this->input->post('hasil_konsultasi');
-        $kebutuhan_data = $this->input->post('kebutuhan_data');
+        $hasil_konsultasi = $this->input->post('hasil_konsultasi', TRUE);
+        $kebutuhan_data = $this->input->post('kebutuhan_data', TRUE);
 
         // Simpan hasil konsultasi ke tabel konsultasi_pengunjung
         if (!$kebutuhan_data || !is_array($kebutuhan_data) || count($kebutuhan_data) === 0) {
@@ -322,6 +476,7 @@ class Admin extends CI_Controller {
 
     public function daftar_kunjungan()
     {
+        $this->check_login();
         $this->load->database();
 
         // Ambil input filter
