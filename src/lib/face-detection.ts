@@ -50,7 +50,7 @@ export function preloadFaceModels(): void {
 
 export async function detectFace(
   video: HTMLVideoElement
-): Promise<{ descriptor: Float32Array } | null> {
+): Promise<{ descriptor: Float32Array; score: number } | null> {
   if (typeof faceapi === 'undefined') {
     console.warn('detectFace: faceapi not loaded yet')
     return null
@@ -65,7 +65,8 @@ export async function detectFace(
     .withFaceLandmarks()
     .withFaceDescriptor()
   if (!detection) return null
-  return { descriptor: detection.descriptor }
+  // score = confidence dari face detector (0-1). Kita gate downstream pakai ini.
+  return { descriptor: detection.descriptor, score: detection.detection.score }
 }
 
 export interface KnownFace {
@@ -80,26 +81,35 @@ export interface FaceMatch {
   distance: number
 }
 
+/**
+ * Cocokkan descriptor terhadap daftar wajah dikenal dengan TWO gates:
+ * 1. Best distance harus <= threshold (default 0.55, lebih strict dari 0.6 untuk reduce false-positive).
+ * 2. Margin antara best & 2nd-best harus >= margin (default 0.08) — kalau dua orang
+ *    sama-sama "mirip" descriptor, kita tolak supaya tidak salah pilih.
+ *
+ * Return null kalau salah satu gate gagal. Tuning constants ada di parameter — bisa
+ * di-override per use-case (kios PST mungkin perlu lebih strict dari kios resepsionis).
+ */
 export function matchFace(
   descriptor: Float32Array,
   knownFaces: KnownFace[],
-  threshold = 0.6
+  threshold = 0.55,
+  margin = 0.08,
 ): FaceMatch | null {
-  let bestMatch: FaceMatch | null = null
-  let bestDistance = Infinity
+  if (knownFaces.length === 0) return null
 
-  for (const known of knownFaces) {
-    const distance = euclideanDistance(descriptor, known.descriptor)
-    if (distance < bestDistance) {
-      bestDistance = distance
-      bestMatch = { id: known.id, nama: known.nama, distance }
-    }
-  }
+  const ranked = knownFaces
+    .map(k => ({ id: k.id, nama: k.nama, distance: euclideanDistance(descriptor, k.descriptor) }))
+    .sort((a, b) => a.distance - b.distance)
 
-  if (bestMatch && bestDistance <= threshold) {
-    return bestMatch
-  }
-  return null
+  const best = ranked[0]
+  if (best.distance > threshold) return null
+
+  // Margin check (kalau hanya 1 known face, margin tidak relevan — skip).
+  const second = ranked[1]
+  if (second && (second.distance - best.distance) < margin) return null
+
+  return best
 }
 
 function euclideanDistance(a: Float32Array, b: Float32Array): number {
@@ -109,4 +119,20 @@ function euclideanDistance(a: Float32Array, b: Float32Array): number {
     sum += diff * diff
   }
   return Math.sqrt(sum)
+}
+
+/**
+ * Average N descriptor menjadi satu. Mengurangi noise per-frame (auto-exposure,
+ * micro-movement, JPEG compression artifact). Hasil descriptor lebih stabil
+ * dibanding single frame. Standar di sistem biometric.
+ */
+export function averageDescriptors(descriptors: Float32Array[]): Float32Array {
+  if (descriptors.length === 0) throw new Error('averageDescriptors: empty array')
+  const len = descriptors[0].length
+  const result = new Float32Array(len)
+  for (const d of descriptors) {
+    for (let i = 0; i < len; i++) result[i] += d[i]
+  }
+  for (let i = 0; i < len; i++) result[i] /= descriptors.length
+  return result
 }
