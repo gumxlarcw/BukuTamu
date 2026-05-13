@@ -6,7 +6,9 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // `public/` berisi file .ts berupa MPEG-TS segment HLS (bukan TypeScript) — exclude
+  // supaya ESLint tidak mencoba parse-nya. `dist/` adalah hasil build.
+  globalIgnores(['dist', 'public/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

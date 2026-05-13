@@ -1,26 +1,71 @@
-import * as faceapi from 'face-api.js'
+// Loaded via CDN: face-api.js@0.22.2 (lihat index.html)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+declare const faceapi: any
 
 let modelsLoaded = false
 
+function waitForFaceApi(timeout = 15000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof faceapi !== 'undefined') return resolve()
+    const start = Date.now()
+    const interval = setInterval(() => {
+      if (typeof faceapi !== 'undefined') {
+        clearInterval(interval)
+        resolve()
+      } else if (Date.now() - start > timeout) {
+        clearInterval(interval)
+        reject(new Error('face-api.js gagal dimuat dari CDN'))
+      }
+    }, 50)
+  })
+}
+
+let loadPromise: Promise<void> | null = null
+
 export async function loadFaceModels(): Promise<void> {
   if (modelsLoaded) return
-  const MODEL_URL = '/models'
-  await Promise.all([
-    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-    faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
-    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-  ])
-  modelsLoaded = true
+  if (loadPromise) return loadPromise
+  loadPromise = (async () => {
+    try {
+      await waitForFaceApi()
+      const MODEL_URL = '/models'
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      ])
+      modelsLoaded = true
+    } catch (e) {
+      loadPromise = null
+      throw e
+    }
+  })()
+  return loadPromise
+}
+
+/** Fire-and-forget preload — call early so models are cached */
+export function preloadFaceModels(): void {
+  loadFaceModels().catch(() => {})
 }
 
 export async function detectFace(
   video: HTMLVideoElement
-): Promise<faceapi.WithFaceDescriptor<faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }, faceapi.FaceLandmarks68>> | null> {
+): Promise<{ descriptor: Float32Array } | null> {
+  if (typeof faceapi === 'undefined') {
+    console.warn('detectFace: faceapi not loaded yet')
+    return null
+  }
+  if (!modelsLoaded) {
+    console.warn('detectFace: models not loaded yet')
+    return null
+  }
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
   const detection = await faceapi
-    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-    .withFaceLandmarks(true)
+    .detectSingleFace(video, options)
+    .withFaceLandmarks()
     .withFaceDescriptor()
-  return detection ?? null
+  if (!detection) return null
+  return { descriptor: detection.descriptor }
 }
 
 export interface KnownFace {
