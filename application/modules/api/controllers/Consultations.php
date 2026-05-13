@@ -14,17 +14,24 @@ class Consultations extends Api_base {
 
         $today = date('Y-m-d');
 
+        // Antrian PST: HANYA 4 layanan inti SKD (Perpustakaan, Konsultasi Statistik,
+        // Rekomendasi, Penjualan). DTSEN punya antrian sendiri di /api/dtsen.
+        // Resepsionis (Lainnya, Keperluan Pimpinan) tidak masuk antrian — di-handle
+        // langsung di Daftar Kunjungan (/api/visits) tanpa flow antrian.
+        // jenis_layanan disimpan sebagai JSON array string ('["Perpustakaan"]') — pakai LIKE
+        // OR untuk match salah satu nama; karena grup mutually exclusive, sebuah visit
+        // dengan layanan SKD pasti hanya berisi item-item SKD.
         $consultations = $this->db
             ->select('k.*, b.nama, b.nama_instansi, b.email, b.notel, b.jeniskelamin, b.pendidikan, b.pekerjaan, b.kategori_instansi')
             ->from('tamdes_kunjungan k')
             ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
             ->where("DATE(k.date_visit)", $today)
-            ->where_in('k.jenis_layanan', [
-                'Perpustakaan',
-                'Konsultasi Statistik',
-                'Rekomendasi Kegiatan Statistik',
-                'Penjualan Produk Statistik',
-            ])
+            ->group_start()
+                ->like('k.jenis_layanan', 'Perpustakaan')
+                ->or_like('k.jenis_layanan', 'Konsultasi Statistik')
+                ->or_like('k.jenis_layanan', 'Rekomendasi Kegiatan Statistik')
+                ->or_like('k.jenis_layanan', 'Penjualan Produk Statistik')
+            ->group_end()
             ->order_by('k.date_visit', 'DESC')
             ->get()->result();
 
@@ -54,6 +61,16 @@ class Consultations extends Api_base {
         // Status awal (dipanggil/diproses) bebas — semua role boleh memanggil & mulai.
         if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
             $this->require_layanan_role($visit->jenis_layanan);
+        }
+
+        // Soft-correct: kalau layanan SKD (perlu evaluasi) tapi FE kirim 'selesai' langsung,
+        // koreksi ke 'menunggu_evaluasi'. Bypass roles boleh override (admin/superadmin/operator).
+        if ($status === 'selesai') {
+            $role = isset($this->current_user->role) ? $this->current_user->role : 'operator';
+            $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
+            if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
+                $status = 'menunggu_evaluasi';
+            }
         }
 
         $update = ['status' => $status];
@@ -88,8 +105,28 @@ class Consultations extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
         }
 
+        if (!$visit->nomor_antrian) {
+            $this->json_response(['success' => false, 'message' => 'Visit ini tidak punya nomor antrian'], 400);
+        }
+
         $nomor  = $visit->nomor_antrian;
         $result = $this->proxy_antrian($nomor);
+
+        // Strict mode: kalau dashboard PST tidak menerima panggilan, JANGAN update DB.
+        // Status DB harus selalu reflect kondisi dashboard sebenarnya — kolom `status`
+        // di-reference oleh evaluasi PST + audit log, jadi tidak boleh corrupt.
+        if (!$result['success']) {
+            $this->audit('call_queue_failed', 'visit', $id, [
+                'nomor'     => $nomor,
+                'reason'    => $result['message']  ?? 'unknown',
+                'http_code' => $result['http_code'] ?? null,
+            ]);
+            $this->json_response([
+                'success' => false,
+                'message' => 'Dashboard antrian tidak merespons. Status tidak diubah. ' .
+                             'Detail: ' . ($result['message'] ?? 'unknown error'),
+            ], 502);
+        }
 
         // Auto-transition antri → dipanggil. Tidak men-downgrade status yang sudah lebih lanjut.
         if ($visit->status === 'antri') {
@@ -185,7 +222,7 @@ class Consultations extends Api_base {
     }
 
     private function proxy_antrian($nomor) {
-        $url     = 'https://dashboard-pst.bpsmalut.com/update-antrian';
+        $url     = $this->_env('DASHBOARD_PST_URL', 'https://dashboard-pst.bpsmalut.com/api/update-antrian');
         $payload = json_encode(['nomor' => $nomor]);
 
         $ch = curl_init($url);

@@ -70,6 +70,10 @@ class Visits extends Api_base {
                 $this->json_response(['success' => false, 'message' => 'id_user dan jenis_layanan diperlukan'], 400);
             }
 
+            // Strategy C: tolak cross layanan
+            $this->validate_no_cross_layanan($jenis_layanan_raw);
+            $this->validate_sarana_for_layanan($jenis_layanan_raw, $input['sarana'] ?? []);
+
             $nomor_antrian = $this->generate_queue_number(is_array($jenis_layanan_raw) ? ($jenis_layanan_raw[0] ?? '') : $jenis_layanan_raw);
 
             $sarana_raw = $input['sarana'] ?? [];
@@ -152,6 +156,16 @@ class Visits extends Api_base {
             $this->require_layanan_role($visit->jenis_layanan);
         }
 
+        // Soft-correct: kalau layanan SKD (perlu evaluasi) tapi FE kirim 'selesai' langsung,
+        // koreksi ke 'menunggu_evaluasi'. Bypass roles boleh override (admin/superadmin/operator).
+        if ($status === 'selesai') {
+            $role = isset($this->current_user->role) ? $this->current_user->role : 'operator';
+            $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
+            if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
+                $status = 'menunggu_evaluasi';
+            }
+        }
+
         $update = ['status' => $status];
 
         if ($status === 'selesai') {
@@ -184,11 +198,22 @@ class Visits extends Api_base {
             $this->json_response(['success' => false, 'message' => 'jenis_layanan diperlukan'], 400);
         }
 
+        $old = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+        if (!$old) {
+            $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+        }
+
+        // Role gate: petugas hanya boleh edit visit yang sesuai grupnya (defense-in-depth).
+        // Cek dua sisi: layanan LAMA (yang sekarang ada di DB) dan layanan BARU (yang diminta).
+        $this->require_layanan_role($old->jenis_layanan);
+        $this->require_layanan_role($jenis_layanan_raw);
+
+        $this->validate_no_cross_layanan($jenis_layanan_raw);
+        $this->validate_sarana_for_layanan($jenis_layanan_raw, $input['sarana'] ?? []);
+
         $jenis_layanan = is_array($jenis_layanan_raw) ? json_encode($jenis_layanan_raw) : $jenis_layanan_raw;
         $sarana_raw = $input['sarana'] ?? [];
         $sarana = is_array($sarana_raw) ? json_encode($sarana_raw) : $sarana_raw;
-
-        $old = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
 
         $update = [
             'jenis_layanan'   => $jenis_layanan,
@@ -215,6 +240,14 @@ class Visits extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
+
+        // Role gate: petugas hanya boleh edit ringkasan visit yang sesuai grupnya.
+        $visit_check = $this->db->select('jenis_layanan')
+                                ->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+        if (!$visit_check) {
+            $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+        }
+        $this->require_layanan_role($visit_check->jenis_layanan);
 
         $input           = $this->get_json_input();
         $hasil_konsultasi = $input['ringkasan'] ?? $input['hasil_konsultasi'] ?? '';

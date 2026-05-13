@@ -10,12 +10,36 @@ class Evaluations extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
-        $visit = $this->db
+        // Hanya 4 layanan PST yang perlu evaluasi tablet.
+        // Resepsionis (Lainnya, Keperluan Pimpinan) skip evaluasi — defense in depth
+        // jika ada visit yang lolos ke menunggu_evaluasi tapi bukan PST.
+        $candidates = $this->db
             ->order_by('id_kunjungan', 'ASC')
             ->get_where('tamdes_kunjungan', ['status' => 'menunggu_evaluasi'])
-            ->row();
+            ->result();
 
-        $this->json_response(['success' => true, 'data' => $visit, 'message' => 'OK']);
+        $pst_services = [
+            'Perpustakaan',
+            'Konsultasi Statistik',
+            'Rekomendasi Kegiatan Statistik',
+            'Penjualan Produk Statistik',
+        ];
+
+        foreach ($candidates as $candidate) {
+            $layanan_list = [];
+            if (!empty($candidate->jenis_layanan)) {
+                $decoded = json_decode($candidate->jenis_layanan, true);
+                $layanan_list = is_array($decoded) ? $decoded : [$candidate->jenis_layanan];
+            }
+            foreach ($layanan_list as $layanan) {
+                if (in_array($layanan, $pst_services, true)) {
+                    $this->json_response(['success' => true, 'data' => $candidate, 'message' => 'OK']);
+                    return;
+                }
+            }
+        }
+
+        $this->json_response(['success' => true, 'data' => null, 'message' => 'OK']);
     }
 
     public function detail($id) {
@@ -23,11 +47,20 @@ class Evaluations extends Api_base {
             $indikator = $this->indikator_list();
             $evaluation = $this->db->get_where('tamdes_evaluasi_detail', ['id_kunjungan' => $id])->result();
 
+            // Konsultasi data dengan status 1 (Ya sesuai) atau 2 (Ya tidak sesuai) —
+            // tamu perlu beri rating kualitas tiap data yang diperoleh.
+            $konsultasi_kualitas = $this->db
+                ->select('id, rincian_data, status_data, kualitas')
+                ->where('id_kunjungan', $id)
+                ->where_in('status_data', [1, 2])
+                ->get('konsultasi_pengunjung')->result();
+
             $this->json_response([
                 'success' => true,
                 'data' => [
-                    'indikator'  => $indikator,
-                    'evaluation' => $evaluation,
+                    'indikator'           => $indikator,
+                    'evaluation'          => $evaluation,
+                    'konsultasi_kualitas' => $konsultasi_kualitas,
                 ],
                 'message' => 'OK',
             ]);
@@ -36,6 +69,7 @@ class Evaluations extends Api_base {
             $input            = $this->get_json_input();
             $skor_keseluruhan = $input['skor_keseluruhan'] ?? null;
             $kepuasan         = $input['kepuasan'] ?? [];
+            $kualitas_per_konsultasi = $input['kualitas_per_konsultasi'] ?? [];
 
             if (!$skor_keseluruhan || !is_numeric($skor_keseluruhan) || $skor_keseluruhan < 1 || $skor_keseluruhan > 10) {
                 $this->json_response(['success' => false, 'message' => 'skor_keseluruhan harus antara 1-10'], 400);
@@ -48,6 +82,17 @@ class Evaluations extends Api_base {
             $visit = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
             if (!$visit) {
                 $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+            }
+
+            // Gate: hanya visit yang sudah menunggu evaluasi (atau sudah selesai, untuk re-submit
+            // koreksi) yang boleh menerima POST. Mencegah attacker post fake eval ke visit
+            // yang masih antri/diproses. Endpoint sengaja no-auth (tablet kiosk), jadi gate ini
+            // adalah satu-satunya defense.
+            if (!in_array($visit->status, ['menunggu_evaluasi', 'selesai'], true)) {
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Evaluasi belum tersedia untuk kunjungan ini (status: ' . $visit->status . ').',
+                ], 400);
             }
 
             // Delete existing evaluation rows to prevent duplicates
@@ -63,6 +108,17 @@ class Evaluations extends Api_base {
                     'kepentingan'  => null,
                     'kepuasan'     => (int) $val_kepuasan,
                 ]);
+            }
+
+            // Update kualitas per data konsultasi (status_data 1 atau 2)
+            if (is_array($kualitas_per_konsultasi)) {
+                foreach ($kualitas_per_konsultasi as $konsultasi_id => $val_kualitas) {
+                    if (!is_numeric($val_kualitas) || $val_kualitas < 1 || $val_kualitas > 10) continue;
+                    $this->db
+                        ->where('id', (int) $konsultasi_id)
+                        ->where('id_kunjungan', $id)
+                        ->update('konsultasi_pengunjung', ['kualitas' => (int) $val_kualitas]);
+                }
             }
 
             // Update kunjungan: rating, status, selesai_timestamp, durasi_detik
