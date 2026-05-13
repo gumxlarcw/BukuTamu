@@ -104,32 +104,61 @@ class Visits extends Api_base {
     public function detail($id) {
         $this->require_auth();
 
-        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            $visit = $this->db->select('k.*, b.nama, b.nama_instansi, b.email, b.notel, b.jeniskelamin, b.pendidikan, b.pekerjaan, b.kategori_instansi, b.pemanfaatan, b.pengaduan')
+                              ->from('tamdes_kunjungan k')
+                              ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
+                              ->where('k.id_kunjungan', $id)
+                              ->get()->row();
+
+            if (!$visit) {
+                $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+            }
+
+            $consultation = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->result();
+            $evaluation   = $this->db->get_where('tamdes_evaluasi_detail', ['id_kunjungan' => $id])->result();
+
+            $this->json_response([
+                'success' => true,
+                'data' => [
+                    'visit'        => $visit,
+                    'consultation' => $consultation,
+                    'evaluation'   => $evaluation,
+                ],
+                'message' => 'OK',
+            ]);
+
+        } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+            // Hapus kunjungan + cascade ke 3 child table (konsultasi_pengunjung,
+            // dtsen_konsultasi, tamdes_evaluasi_detail). Hard delete by design —
+            // audit log capture state SEBELUM delete supaya tetap ada history.
+            $this->require_role('admin');
+
+            $visit = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+            if (!$visit) {
+                $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+            }
+
+            // Capture state untuk audit log sebelum row hilang permanen
+            $this->audit('delete', 'visit', $id, [
+                'nomor_antrian' => $visit->nomor_antrian,
+                'jenis_layanan' => $visit->jenis_layanan,
+                'date_visit'    => $visit->date_visit,
+                'status'        => $visit->status,
+                'id_user'       => $visit->id_user,
+            ]);
+
+            // Cascade: 3 child table yang FK ke id_kunjungan (owned-by-visit).
+            $this->db->where('id_kunjungan', $id)->delete('konsultasi_pengunjung');
+            $this->db->where('id_kunjungan', $id)->delete('dtsen_konsultasi');
+            $this->db->where('id_kunjungan', $id)->delete('tamdes_evaluasi_detail');
+            $this->db->where('id_kunjungan', $id)->delete('tamdes_kunjungan');
+
+            $this->json_response(['success' => true, 'data' => null, 'message' => 'Kunjungan berhasil dihapus']);
+
+        } else {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
-
-        $visit = $this->db->select('k.*, b.nama, b.nama_instansi, b.email, b.notel, b.jeniskelamin, b.pendidikan, b.pekerjaan, b.kategori_instansi, b.pemanfaatan, b.pengaduan')
-                          ->from('tamdes_kunjungan k')
-                          ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
-                          ->where('k.id_kunjungan', $id)
-                          ->get()->row();
-
-        if (!$visit) {
-            $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
-        }
-
-        $consultation = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->result();
-        $evaluation   = $this->db->get_where('tamdes_evaluasi_detail', ['id_kunjungan' => $id])->result();
-
-        $this->json_response([
-            'success' => true,
-            'data' => [
-                'visit'        => $visit,
-                'consultation' => $consultation,
-                'evaluation'   => $evaluation,
-            ],
-            'message' => 'OK',
-        ]);
     }
 
     public function status($id) {
