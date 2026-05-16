@@ -164,6 +164,25 @@ class Kiosk extends Api_base {
             $this->json_response(['success' => false, 'message' => 'id_user dan jenis_layanan diperlukan'], 400);
         }
 
+        // Dedup: accidental double-tap within 60s for SAME guest + SAME service → return existing.
+        // Window is short (60s, not all-day like register) because returning guests legitimately
+        // come back same day for different services.
+        $recent_cutoff = date('Y-m-d H:i:s', time() - 60);
+        $recent = $this->db
+            ->where('id_user', $id_user)
+            ->where('jenis_layanan', $jenis_layanan)
+            ->where('date_visit >=', $recent_cutoff)
+            ->order_by('id_kunjungan', 'DESC')
+            ->limit(1)
+            ->get('tamdes_kunjungan')->row();
+        if ($recent) {
+            $this->json_response([
+                'success' => true,
+                'data'    => ['id_kunjungan' => $recent->id_kunjungan, 'nomor_antrian' => $recent->nomor_antrian],
+                'message' => 'Kunjungan berhasil dibuat',
+            ], 201);
+        }
+
         $nomor_antrian = $this->generate_queue_number(is_array($jenis_layanan_raw) ? ($jenis_layanan_raw[0] ?? '') : $jenis_layanan_raw);
 
         $sarana_raw = $input['sarana'] ?? [];

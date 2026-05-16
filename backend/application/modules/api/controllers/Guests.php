@@ -55,6 +55,9 @@ class Guests extends Api_base {
             $this->require_auth();
             $input = $this->get_json_input();
 
+            // Race-safety: same pattern as Kiosk::register. MAX(id_user)+1 is not
+            // atomic under concurrent writes; lock briefly while we compute & insert.
+            $this->db->query('LOCK TABLES tamdes_buku WRITE');
             $max = $this->db->select_max('id_user')->get('tamdes_buku')->row()->id_user;
             $new_id = $max ? $max + 1 : 8200001;
 
@@ -75,6 +78,7 @@ class Guests extends Api_base {
                 'face_descriptor' => isset($input['face_descriptor']) ? json_encode($input['face_descriptor']) : null,
             ];
             $this->db->insert('tamdes_buku', $data);
+            $this->db->query('UNLOCK TABLES');
             $guest = $this->db->select($this->safe_columns)
                               ->get_where('tamdes_buku', ['id_user' => $new_id])
                               ->row();
@@ -119,6 +123,18 @@ class Guests extends Api_base {
 
         } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
             $this->require_role('admin');
+
+            // Refuse if guest has visits — admin must delete each visit first (which
+            // cascades to consultations/dtsen/evaluations per Visits::detail DELETE).
+            // Auto-cascading here would silently nuke years of evaluation history.
+            $visit_count = (int) $this->db->where('id_user', $id)->count_all_results('tamdes_kunjungan');
+            if ($visit_count > 0) {
+                $this->json_response([
+                    'success' => false,
+                    'message' => "Tidak bisa menghapus tamu yang masih punya {$visit_count} kunjungan. Hapus semua kunjungannya dulu, baru tamunya.",
+                ], 409);
+            }
+
             $this->audit('delete', 'guest', $id);
             $this->db->where('id_user', $id)->delete('tamdes_buku');
             $this->json_response(['success' => true, 'data' => null, 'message' => 'Tamu berhasil dihapus']);
