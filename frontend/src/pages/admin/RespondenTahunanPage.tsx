@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import apiClient from '@/api/client'
 import { parseLayanan, parseSarana, saranaLabel } from '@/types/visit'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -16,21 +15,10 @@ import {
   KATEGORI_INSTANSI_OPTIONS,
   PEMANFAATAN_OPTIONS,
 } from '@/types/guest'
-import { guestsApi } from '@/api/guests'
+import { guestsApi, type GuestVisit } from '@/api/guests'
+import { respondenApi, type RespondenRow } from '@/api/responden'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { exportCsv } from '@/lib/export-csv'
-
-interface RespondenRow {
-  id_user: number
-  jenis_layanan: string | null
-  layanan_lainnya: string | null
-  sarana: string | null
-  sarana_lainnya: string | null
-  nama: string
-  nama_instansi: string
-  max_visit: string
-  total_kunjungan: number
-}
 
 const TW_LABELS: Record<string, string> = { '1': 'TW I (Jan–Mar)', '2': 'TW II (Apr–Jun)', '3': 'TW III (Jul–Sep)', '4': 'TW IV (Okt–Des)' }
 
@@ -63,21 +51,19 @@ export default function RespondenTahunanPage() {
 
   const { data: viewVisits } = useQuery({
     queryKey: ['guest-visits-responden', viewRow?.id_user],
-    queryFn: () => apiClient.get(`/api/guests/${viewRow!.id_user}/visits`).then(r => r.data.data),
+    queryFn: () => guestsApi.getVisits(viewRow!.id_user).then(r => r.data.data),
     enabled: !!viewRow,
   })
 
   const { data, isLoading } = useQuery({
     queryKey: ['responden-tahunan', { tahun, triwulan, skd: skdFilter, q: search, page, limit }],
-    queryFn: () => apiClient.get('/api/responden', {
-      params: {
-        tahun,
-        q: search || undefined,
-        page,
-        limit,
-        triwulan: triwulan || undefined,
-        ...(skdFilter ? { skd: '1' } : {}),
-      },
+    queryFn: () => respondenApi.list({
+      tahun,
+      q: search || undefined,
+      page,
+      limit,
+      triwulan: triwulan || undefined,
+      ...(skdFilter ? { skd: '1' } : {}),
     }).then(r => r.data),
   })
 
@@ -87,8 +73,8 @@ export default function RespondenTahunanPage() {
   const years = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i))
 
   const handleExport = () => {
-    apiClient.get('/api/responden', {
-      params: { tahun, q: search || undefined, limit: 10000, triwulan: triwulan || undefined, ...(skdFilter ? { skd: '1' } : {}) },
+    respondenApi.list({
+      tahun, q: search || undefined, limit: 10000, triwulan: triwulan || undefined, ...(skdFilter ? { skd: '1' } : {}),
     }).then(r => {
       const d = r.data.data as RespondenRow[]
       exportCsv(`responden-${tahun}${triwulan ? `-tw${triwulan}` : ''}${skdFilter ? '-skd' : ''}`, d.map((row: any) => ({
@@ -359,7 +345,7 @@ export default function RespondenTahunanPage() {
                     Riwayat Kunjungan ({viewVisits.length})
                   </p>
                   <div className="max-h-48 overflow-y-auto space-y-1.5">
-                    {viewVisits.map((v: { id_kunjungan: number; jenis_layanan: string; date_visit: string; status: string; rating_pengunjung: number | null }) => (
+                    {viewVisits.map((v: GuestVisit) => (
                       <div key={v.id_kunjungan} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-muted/40">
                         <span className="text-muted-foreground shrink-0">
                           {new Date(v.date_visit).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}

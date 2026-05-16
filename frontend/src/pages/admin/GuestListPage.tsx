@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { guestsApi } from '@/api/guests'
-import apiClient from '@/api/client'
+import { guestsApi, type GuestVisit } from '@/api/guests'
 import type { Guest } from '@/types/guest'
 import {
   PENDIDIKAN_OPTIONS,
@@ -107,13 +106,13 @@ export default function GuestListPage() {
 
   const { data: visitHistory } = useQuery({
     queryKey: ['guest-visits', editGuest?.id_user],
-    queryFn: () => apiClient.get(`/api/guests/${editGuest!.id_user}/visits`).then(r => r.data.data),
+    queryFn: () => guestsApi.getVisits(editGuest!.id_user).then(r => r.data.data),
     enabled: !!editGuest,
   })
 
   const { data: viewVisitHistory } = useQuery({
     queryKey: ['guest-visits', viewGuest?.id_user],
-    queryFn: () => apiClient.get(`/api/guests/${viewGuest!.id_user}/visits`).then(r => r.data.data),
+    queryFn: () => guestsApi.getVisits(viewGuest!.id_user).then(r => r.data.data),
     enabled: !!viewGuest,
   })
 
@@ -374,7 +373,7 @@ export default function GuestListPage() {
                 Riwayat Kunjungan ({visitHistory.length})
               </p>
               <div className="max-h-40 overflow-y-auto space-y-1.5">
-                {visitHistory.map((v: { id_kunjungan: number; jenis_layanan: string; date_visit: string; status: string; rating_pengunjung: number | null }) => (
+                {visitHistory.map((v: GuestVisit) => (
                   <div key={v.id_kunjungan} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-muted/40">
                     <span className="text-muted-foreground shrink-0">
                       {new Date(v.date_visit).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -482,7 +481,7 @@ export default function GuestListPage() {
                     Riwayat Kunjungan ({viewVisitHistory.length})
                   </p>
                   <div className="max-h-48 overflow-y-auto space-y-1.5">
-                    {viewVisitHistory.map((v: { id_kunjungan: number; jenis_layanan: string; date_visit: string; status: string; rating_pengunjung: number | null }) => (
+                    {viewVisitHistory.map((v: GuestVisit) => (
                       <div key={v.id_kunjungan} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-muted/40">
                         <span className="text-muted-foreground shrink-0">
                           {new Date(v.date_visit).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}

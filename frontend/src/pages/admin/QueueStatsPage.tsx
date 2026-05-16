@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import apiClient from '@/api/client'
+import { queueStatsApi } from '@/api/queueStats'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
 import { Timer, Clock, TrendingUp, BarChart3 } from 'lucide-react'
 import { parseLayanan } from '@/types/visit'
 
-function fmt(seconds: number | null): string {
+function fmt(seconds: number | null | undefined): string {
   if (!seconds) return '-'
   const m = Math.floor(seconds / 60)
   return m > 0 ? `${m} menit` : `${Math.round(seconds)} detik`
@@ -36,7 +36,7 @@ export default function QueueStatsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['queue-stats', tahun],
-    queryFn: () => apiClient.get('/api/queue-stats', { params: { tahun } }).then(r => r.data.data),
+    queryFn: () => queueStatsApi.get({ tahun }).then(r => r.data.data),
   })
 
   return (

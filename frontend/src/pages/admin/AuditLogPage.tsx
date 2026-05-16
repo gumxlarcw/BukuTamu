@@ -1,21 +1,10 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import apiClient from '@/api/client'
+import { auditApi, type AuditEntry } from '@/api/audit'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight, User, Edit, Trash2, RefreshCw, LogIn, LogOut, Key } from 'lucide-react'
-
-interface AuditEntry {
-  id: number
-  admin_user: string
-  action: string
-  target_type: string
-  target_id: number | null
-  detail: string | null
-  ip_address: string | null
-  created_at: string
-}
 
 const ACTION_ICONS: Record<string, typeof Edit> = {
   update: Edit,
@@ -61,7 +50,7 @@ export default function AuditLogPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['audit-log', page, limit],
-    queryFn: () => apiClient.get('/api/audit', { params: { page, limit } }).then(r => r.data),
+    queryFn: () => auditApi.list({ page, limit }).then(r => r.data),
   })
 
   const entries: AuditEntry[] = data?.data ?? []

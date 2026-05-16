@@ -1,23 +1,13 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import apiClient from '@/api/client'
+import { usersApi, type AdminUser } from '@/api/users'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { UserPlus, Pencil, Trash2, Shield, Key } from 'lucide-react'
-
-interface AdminUser {
-  id: number
-  username: string
-  nama: string
-  role: 'superadmin' | 'admin' | 'operator'
-  active: number
-  last_login: string | null
-  created_at: string
-}
 
 const ROLE_LABELS: Record<string, string> = { superadmin: 'Super Admin', admin: 'Admin', operator: 'Operator' }
 const ROLE_COLORS: Record<string, string> = { superadmin: 'bg-red-100 text-red-700', admin: 'bg-blue-100 text-blue-700', operator: 'bg-gray-100 text-gray-700' }
@@ -35,29 +25,29 @@ export default function UserManagementPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-users'],
-    queryFn: () => apiClient.get('/api/users').then(r => r.data.data as AdminUser[]),
+    queryFn: () => usersApi.list().then(r => r.data.data),
   })
 
   const createMut = useMutation({
-    mutationFn: () => apiClient.post('/api/users', form),
+    mutationFn: () => usersApi.create(form),
     onSuccess: () => { toast.success('User berhasil dibuat'); setCreateOpen(false); setForm({ username: '', password: '', nama: '', role: 'operator' }); queryClient.invalidateQueries({ queryKey: ['admin-users'] }) },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Gagal membuat user'),
   })
 
   const updateMut = useMutation({
-    mutationFn: () => apiClient.put(`/api/users/${editUser!.id}`, editForm),
+    mutationFn: () => usersApi.update(editUser!.id, editForm),
     onSuccess: () => { toast.success('User berhasil diupdate'); setEditUser(null); queryClient.invalidateQueries({ queryKey: ['admin-users'] }) },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Gagal update'),
   })
 
   const deleteMut = useMutation({
-    mutationFn: (id: number) => apiClient.delete(`/api/users/${id}`),
+    mutationFn: (id: number) => usersApi.delete(id),
     onSuccess: () => { toast.success('User dihapus'); setDeleteId(null); queryClient.invalidateQueries({ queryKey: ['admin-users'] }) },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Gagal menghapus'),
   })
 
   const pwMut = useMutation({
-    mutationFn: () => apiClient.post('/api/users/change-password', pwForm),
+    mutationFn: () => usersApi.changePassword(pwForm),
     onSuccess: () => { toast.success('Password berhasil diubah'); setPwOpen(false); setPwForm({ old_password: '', new_password: '' }) },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Gagal mengubah password'),
   })
