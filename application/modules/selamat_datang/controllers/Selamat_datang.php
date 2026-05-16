@@ -26,25 +26,30 @@ class Selamat_datang extends MX_Controller {
 	}
 
 	public function add() {
-		// Cek ID terakhir
-		$last = $this->db->select('id_user')->order_by('id_user', 'DESC')->get('tamdes_buku')->row();
-		$new_id_user = $last ? $last->id_user + 1 : 8200001;
+		// Cek ID terakhir (tamdes_buku.id_user bukan AUTO_INCREMENT)
+		$last = $this->db->select_max('id_user')->get('tamdes_buku')->row();
+		$new_id_user = ($last && $last->id_user) ? ((int) $last->id_user + 1) : 8200001;
+
+		$tgldatang_raw = $this->input->post('tgldatang', TRUE);
+		$tgldatang = $tgldatang_raw ? substr((string) $tgldatang_raw, 0, 10) : null; // kolom DATE
 
 		// Simpan user
 		$data = [
 			'id_user' => $new_id_user,
-			'tgldatang' => $this->input->post('tgldatang'),
-			'nama' => $this->input->post('nama'),
-			'email' => $this->input->post('email'),
-			'notel' => $this->input->post('notel'),
-			'jeniskelamin' => $this->input->post('jeniskelamin'),
-			'pendidikan' => $this->input->post('pendidikan'),
-			'pekerjaan' => $this->input->post('pekerjaan'),
-			'kategori_instansi' => $this->input->post('kategori_instansi'),
-			'nama_instansi' => $this->input->post('nama_instansi'),
-			'pemanfaatan' => $this->input->post('pemanfaatan'),
+			'tgldatang' => $tgldatang,
+			'nama' => $this->input->post('nama', TRUE),
+			'email' => $this->input->post('email', TRUE),
+			'notel' => $this->input->post('notel', TRUE),
+			'jeniskelamin' => $this->input->post('jeniskelamin', TRUE),
+			'pendidikan' => $this->input->post('pendidikan', TRUE),
+			'pekerjaan' => $this->input->post('pekerjaan', TRUE),
+			'kategori_instansi' => $this->input->post('kategori_instansi', TRUE),
+			'nama_instansi' => $this->input->post('nama_instansi', TRUE),
+			'pemanfaatan' => $this->input->post('pemanfaatan', TRUE),
 			'sarana' => json_encode(['1 : Pelayanan Statistik Terpadu (PST) datang langsung']),
-			'pengaduan' => $this->input->post('pengaduan')
+			'pengaduan' => $this->input->post('pengaduan', TRUE),
+		    'biometric_consent' => 1,
+    		'consent_timestamp' => date('Y-m-d H:i:s'),
 		];
 
 		// Simpan foto
@@ -61,24 +66,48 @@ class Selamat_datang extends MX_Controller {
 		// Insert ke tabel tamdes_buku
 		$this->m_selamat_datang->input($data, 'tamdes_buku');
 
-		// Buat nomor antrian berdasarkan urutan hari ini
-		$no_antrian = $this->generate_no_antrian();
+		// Cek jenis layanan untuk nomor antrian
+		$jenis_layanan = $this->session->userdata('jenis_layanan');
+		$no_antrian = null;
+		if ($jenis_layanan !== 'Lainnya' && $jenis_layanan !== 'Keperluan Pimpinan') {
+			// Buat nomor antrian berdasarkan urutan hari ini
+			$no_antrian = $this->generate_no_antrian();
+		}
 
 		// Simpan ke tabel kunjungan langsung tanpa cek duplikasi
-		$this->db->insert('tamdes_kunjungan', [
+		$kunjungan = [
 			'id_user' => $new_id_user,
 			'date_visit' => date('Y-m-d H:i:s'),
-			'jenis_layanan' => $this->session->userdata('jenis_layanan'),
+			'jenis_layanan' => $jenis_layanan,
+			'status' => 'antri',
 			'nomor_antrian' => $no_antrian
-		]);
+		];
+		log_message('debug', 'selamat_datang::add - insert kunjungan: ' . json_encode($kunjungan));
+		$this->db->insert('tamdes_kunjungan', $kunjungan);
+		if ($this->db->affected_rows() <= 0) {
+			$dberr = $this->db->error();
+			log_message('error', 'selamat_datang::add - gagal insert kunjungan: ' . print_r($dberr, true));
+		}
 
 		// Redirect setelah semua selesai
 		$data = [
 			'success' => 'Data berhasil disimpan.',
 			'nomor_antrian' => $no_antrian,
 			'active_tab' => 'photo' // 👈 tambahkan ini
-			
 		];
+
+		// If the request is AJAX (fetch from the kiosk), return JSON so the client
+		// can show the modal without navigating to /selamat_datang/add.
+		if ($this->input->is_ajax_request()) {
+			header('Content-Type: application/json');
+			echo json_encode([
+				'status' => 'success',
+				'message' => $data['success'],
+				'nomor_antrian' => $data['nomor_antrian']
+			]);
+			return;
+		}
+
 		$this->load->view('view_selamat_datang.php', $data);
 	}
 
@@ -108,10 +137,39 @@ class Selamat_datang extends MX_Controller {
 
 
 	public function recognize() {
+		if (!trim((string) ($this->session->userdata('jenis_layanan') ?? ''))) {
+			return redirect('layanan');
+		}
+		// Harus lewat langkah pilih status dan memilih "Sudah Pernah Daftar"
+		if ($this->session->userdata('status_pilihan') !== 'existing') {
+			return redirect('selamat_datang/check');
+		}
 		$this->load->view('view_recognize');
 	}
 
+	public function pilih_status($status = null)
+	{
+		if (!trim((string) ($this->session->userdata('jenis_layanan') ?? ''))) {
+			return redirect('layanan');
+		}
+
+		$status = strtolower(trim((string) $status));
+		if (!in_array($status, ['existing', 'new'], true)) {
+			return redirect('selamat_datang/check');
+		}
+
+		$this->session->set_userdata('status_pilihan', $status);
+		if ($status === 'existing') {
+			return redirect('selamat_datang/recognize');
+		}
+
+		return redirect('layanan/auto');
+	}
+
 	public function check() {
+		if (!trim((string) ($this->session->userdata('jenis_layanan') ?? ''))) {
+			return redirect('layanan');
+		}
 		$this->load->view('view_pilih_status');
 	}
 	
@@ -139,6 +197,17 @@ class Selamat_datang extends MX_Controller {
 	}
 
 	
+	public function get_all_tamu()
+	{
+		$tamu = $this->db->select('id_user, nama')
+						->order_by('nama', 'ASC')
+						->get('tamdes_buku')
+						->result();
+
+		header('Content-Type: application/json');
+		echo json_encode($tamu);
+	}
+
 
 	public function get_face_data()
 	{
@@ -150,6 +219,7 @@ class Selamat_datang extends MX_Controller {
 			$result[] = [
 				'id_user' => $user->id_user,
 				'nama' => $user->nama,
+				'nama_instansi' => $user->nama_instansi,
 				'face_descriptor' => $user->face_descriptor
 			];
 		}
@@ -173,38 +243,62 @@ class Selamat_datang extends MX_Controller {
 
 	public function masuk() {
 		$json = json_decode(file_get_contents('php://input'), true);
-		$id_user = $json['id_user'] ?? null;
+		$id_user = isset($json['id_user']) ? (int) $json['id_user'] : null;
+		$jenis_layanan = trim((string) ($this->session->userdata('jenis_layanan') ?? ''));
+
+		if ($jenis_layanan === '') {
+			echo json_encode([
+				'status' => 'error',
+				'message' => 'Jenis layanan belum dipilih. Silakan kembali ke halaman layanan.'
+			]);
+			return;
+		}
 
 		if ($id_user) {
 			// Cek apakah user sudah melakukan kunjungan hari ini
-			$existing = $this->db->get_where('tamdes_kunjungan', [
-				'id_user' => $id_user,
-				'DATE(date_visit)' => date('Y-m-d')
-			])->row();
+			$existing = $this->db
+				->where('id_user', $id_user)
+				->where('DATE(date_visit)', date('Y-m-d'))
+				->get('tamdes_kunjungan')
+				->row();
 
-			if ($existing) {
-				// Gunakan nomor antrian yang sudah ada
-				$no_antrian = $existing->nomor_antrian;
-			} else {
-				// Buat nomor antrian baru
-				$no_antrian = $this->generate_no_antrian();
-
-				$this->db->insert('tamdes_kunjungan', [
-					'id_user' => $id_user,
-					'date_visit' => date('Y-m-d H:i:s'),
-					'jenis_layanan' => $this->session->userdata('jenis_layanan'),
-					'nomor_antrian' => $no_antrian
-				]);
+			// Cek jenis layanan untuk nomor antrian
+			$no_antrian = null;
+			if ($jenis_layanan !== 'Lainnya' && $jenis_layanan !== 'Keperluan Pimpinan') {
+				if ($existing) {
+					// Gunakan nomor antrian yang sudah ada
+					$no_antrian = $existing->nomor_antrian;
+				} else {
+					// Buat nomor antrian baru
+					$no_antrian = $this->generate_no_antrian();
+				}
 			}
 
-			// Kirim ke printer thermal
-			$this->send_to_printer($no_antrian);
-			usleep(1);
+			if (!$existing) {
+				$kunjungan = [
+					'id_user' => $id_user,
+					'date_visit' => date('Y-m-d H:i:s'),
+					'jenis_layanan' => $jenis_layanan,
+					'nomor_antrian' => $no_antrian
+				];
+				log_message('debug', 'selamat_datang::masuk - insert kunjungan: ' . json_encode($kunjungan));
+				$this->db->insert('tamdes_kunjungan', $kunjungan);
+				if ($this->db->affected_rows() <= 0) {
+					$dberr = $this->db->error();
+					log_message('error', 'selamat_datang::masuk - gagal insert kunjungan: ' . print_r($dberr, true));
+				}
+			}
+
+			// Kirim ke printer thermal hanya jika ada nomor antrian
+			if ($no_antrian) {
+				$this->send_to_printer($no_antrian);
+				usleep(1);
+			}
 
 			echo json_encode([
 				'status' => 'success',
 				'nomor_antrian' => $no_antrian,
-				'print_url' => base_url('antrian/cetak/' . $no_antrian)
+				'print_url' => $no_antrian ? base_url('antrian/cetak/' . $no_antrian) : null
 			]);
 		} else {
 			echo json_encode([

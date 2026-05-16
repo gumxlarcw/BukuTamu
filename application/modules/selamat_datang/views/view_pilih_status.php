@@ -8,6 +8,7 @@
     <!-- CSS -->
     <link href="<?php echo base_url('assets/form/css/bootstrap.min.css'); ?>" rel="stylesheet" />
     <link href="<?php echo base_url('assets/form/css/paper-bootstrap-wizard.css'); ?>" rel="stylesheet" />
+    <link href="<?php echo base_url('assets/form/css/kiosk.css') . '?v=' . @filemtime(FCPATH . 'assets/form/css/kiosk.css'); ?>" rel="stylesheet" />
 
     <style>
         body, html {
@@ -54,8 +55,8 @@
 </head>
 
 <body>
-    <div class="image-container">
-        <video autoplay muted loop playsinline id="bg-video">
+    <div class="image-container kiosk-page">
+        <video autoplay muted loop playsinline preload="metadata" id="bg-video">
             <source src="<?php echo base_url('assets/form/video/bg-video.mp4'); ?>" type="video/mp4">
         </video>
 
@@ -65,16 +66,31 @@
                     <div class="col-md-8 col-md-offset-2">
                         <div class="card wizard-card text-center">
                             <div class="wizard-header">
+                                <div class="kiosk-step" style="margin-bottom: 8px;">Langkah 2 dari 3</div>
+                                <?php $layanan = (string) ($this->session->userdata('jenis_layanan') ?? ''); ?>
+                                <?php if ($layanan !== ''): ?>
+                                    <div style="margin-bottom: 10px;">
+                                        <span class="label label-success kiosk-badge">
+                                            Layanan terpilih: <?= htmlspecialchars($layanan, ENT_QUOTES, 'UTF-8') ?>
+                                        </span>
+                                    </div>
+                                    <div style="margin-bottom: 15px;">
+                                        <a href="<?= base_url('layanan') ?>" class="btn btn-default btn-sm">Ganti layanan</a>
+                                    </div>
+                                <?php endif; ?>
                                 <h3 class="wizard-title">Apakah Anda sudah pernah mendaftar?</h3>
                                 <p class="category">Jika sudah pernah mengisi data, Anda cukup melakukan verifikasi wajah.</p>
+                                <div class="kiosk-microcopy">Proses cepat, tanpa mengulang input data.</div>
                             </div>
 
-                            <div class="row" style="margin-top: 30px;">
+                            <div class="row" style="margin-top: 22px;">
                                 <div class="col-sm-6">
-                                    <a href="<?= base_url('selamat_datang/recognize') ?>" class="btn btn-lg btn-success btn-fill btn-block">🔍 Sudah Pernah Daftar</a>
+                                    <a href="<?= base_url('selamat_datang/pilih_status/existing') ?>" class="btn btn-lg btn-success btn-fill btn-block">Sudah Pernah Daftar</a>
                                 </div>
                                 <div class="col-sm-6">
-                                    <a href="<?= base_url('layanan/auto'); ?>" class="btn btn-lg btn-primary btn-fill btn-block">🆕 Belum Pernah Daftar</a>
+                                    <a href="<?= base_url('selamat_datang/pilih_status/new'); ?>" class="btn btn-lg btn-primary btn-fill btn-block">
+                                        Belum Pernah Daftar
+                                    </a>
                                 </div>
                             </div>
                         </div>

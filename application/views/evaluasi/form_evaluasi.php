@@ -14,6 +14,11 @@
             background: #f0f0f0;
             padding: 20px;
         }
+
+        /* Avoid black flash while the background video is still loading */
+        #bg-video {
+            background: #fff;
+        }
         .question-block {
             background: #fff;
             border-radius: 10px;
@@ -55,7 +60,7 @@
 <body>
 
 <div class="image-container set-full-height">
-    <video autoplay muted loop playsinline id="bg-video"
+    <video autoplay muted loop playsinline preload="metadata" id="bg-video"
         style="position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; object-fit: cover; z-index: -1;">
         <source src="<?= base_url('assets/form/video/bg-video.mp4'); ?>" type="video/mp4">
     </video>
@@ -64,16 +69,17 @@
         <div class="col-md-8 col-md-offset-2">
             <div class="card wizard-card">
                 <form action="<?= site_url('evaluasi/submit') ?>" method="post">
+                    <input type="hidden" name="<?= $this->security->get_csrf_token_name(); ?>" value="<?= $this->security->get_csrf_hash(); ?>">
                     <div class="wizard-header text-center">
                         <h3 class="wizard-title">📝 Evaluasi Pelayanan</h3>
                         <p class="category">Silakan berikan penilaian terhadap setiap indikator.</p>
                     </div>
 
-                    <input type="hidden" name="id_kunjungan" value="<?= $id_kunjungan ?>">
+                    <input type="hidden" name="id_kunjungan" value="<?= htmlspecialchars((string) $id_kunjungan, ENT_QUOTES, 'UTF-8') ?>">
 
                     <?php foreach ($indikator as $no => $label): ?>
                         <div class="question-block">
-                            <p><strong><?= $no . '. ' . $label ?></strong></p>
+                            <p><strong><?= htmlspecialchars($no . '. ' . $label, ENT_QUOTES, 'UTF-8') ?></strong></p>
 
                             <div class="star-group">
                                 <label>Kepentingan:</label>

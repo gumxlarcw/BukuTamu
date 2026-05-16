@@ -1,0 +1,144 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+require_once APPPATH . 'modules/api/controllers/Api_base.php';
+
+/**
+ * Antrian Konsultasi DTSEN (Data Terpadu Sosial Ekonomi Nasional).
+ * Alur terpisah dari Konsultasi SKD: form data berbeda (tabel dtsen_konsultasi),
+ * tidak ada evaluasi tablet (next_status → 'selesai' langsung).
+ */
+class Dtsen extends Api_base {
+
+    public function index() {
+        $this->require_auth();
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+
+        $today = date('Y-m-d');
+
+        // Hanya visit hari ini dengan layanan Konsultasi DTSEN.
+        $visits = $this->db
+            ->select('k.*, b.nama, b.nama_instansi, b.email, b.notel, b.jeniskelamin, b.pendidikan, b.pekerjaan, b.kategori_instansi')
+            ->from('tamdes_kunjungan k')
+            ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
+            ->where("DATE(k.date_visit)", $today)
+            ->where("k.jenis_layanan LIKE", '%Konsultasi DTSEN%')
+            ->order_by('k.date_visit', 'DESC')
+            ->get()->result();
+
+        $this->json_response(['success' => true, 'data' => $visits, 'message' => 'OK']);
+    }
+
+    public function detail($id) {
+        $this->require_auth();
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'PUT') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+
+        $input  = $this->get_json_input();
+        $status = $input['status'] ?? null;
+
+        if (!$status) {
+            $this->json_response(['success' => false, 'message' => 'status diperlukan'], 400);
+        }
+
+        $visit = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+        if (!$visit) {
+            $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+        }
+
+        if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
+            $this->require_layanan_role($visit->jenis_layanan);
+        }
+
+        $update = ['status' => $status];
+
+        if ($status === 'selesai') {
+            $selesai_timestamp           = date('Y-m-d H:i:s');
+            $update['selesai_timestamp'] = $selesai_timestamp;
+            if ($visit->date_visit) {
+                $durasi                 = strtotime($selesai_timestamp) - strtotime($visit->date_visit);
+                $update['durasi_detik'] = max(0, $durasi);
+            }
+        }
+
+        $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
+        $updated = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+
+        $this->json_response(['success' => true, 'data' => $updated, 'message' => 'Status berhasil diupdate']);
+    }
+
+    /**
+     * GET  /api/dtsen/{id}/data  → ambil data DTSEN terbaru untuk visit
+     * POST /api/dtsen/{id}/data  → simpan / replace data DTSEN
+     *
+     * Struktur DTSEN: satu visit = satu row (tidak multi-row seperti SKD).
+     * Fields: jenis_konsultasi_dtsen, hasil, catatan, nik_dirujuk.
+     */
+    public function data($id) {
+        $this->require_auth();
+
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            $row = $this->db->get_where('dtsen_konsultasi', ['id_kunjungan' => $id])->row();
+            $this->json_response(['success' => true, 'data' => $row, 'message' => 'OK']);
+
+        } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $visit_check = $this->db->select('jenis_layanan, status, date_visit')
+                                    ->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
+            if (!$visit_check) {
+                $this->json_response(['success' => false, 'message' => 'Kunjungan tidak ditemukan'], 404);
+            }
+            $this->require_layanan_role($visit_check->jenis_layanan);
+
+            $input = $this->get_json_input();
+
+            $jenis = isset($input['jenis_konsultasi_dtsen']) ? (int)$input['jenis_konsultasi_dtsen'] : 0;
+            $hasil = isset($input['hasil']) ? (int)$input['hasil'] : 0;
+            if ($jenis < 1 || $jenis > 5) {
+                $this->json_response(['success' => false, 'message' => 'jenis_konsultasi_dtsen tidak valid (1-5).'], 400);
+            }
+            if ($hasil < 1 || $hasil > 3) {
+                $this->json_response(['success' => false, 'message' => 'hasil tidak valid (1-3).'], 400);
+            }
+
+            $row = [
+                'id_kunjungan'           => $id,
+                'jenis_konsultasi_dtsen' => $jenis,
+                'hasil'                  => $hasil,
+                'catatan'                => $input['catatan'] ?? null,
+                'nik_dirujuk'            => !empty($input['nik_dirujuk']) ? substr(preg_replace('/\D/', '', $input['nik_dirujuk']), 0, 16) : null,
+                'tanggal_input'          => date('Y-m-d H:i:s'),
+            ];
+
+            // Upsert: delete existing then insert (single-row per visit semantics).
+            $this->db->where('id_kunjungan', $id)->delete('dtsen_konsultasi');
+            $this->db->insert('dtsen_konsultasi', $row);
+            $saved = $this->db->get_where('dtsen_konsultasi', ['id_kunjungan' => $id])->row();
+
+            // Auto-finalize: DTSEN → 'selesai' langsung (next_status_after_completion
+            // sudah mengembalikan 'selesai' untuk DTSEN). Skip kalau visit sudah final.
+            if ($visit_check->status !== 'selesai' && $visit_check->status !== 'menunggu_evaluasi') {
+                $next_status                 = $this->next_status_after_completion($visit_check->jenis_layanan);
+                $update                      = ['status' => $next_status];
+                if ($next_status === 'selesai') {
+                    $selesai_ts                  = date('Y-m-d H:i:s');
+                    $update['selesai_timestamp'] = $selesai_ts;
+                    if ($visit_check->date_visit) {
+                        $update['durasi_detik'] = max(0, strtotime($selesai_ts) - strtotime($visit_check->date_visit));
+                    }
+                }
+                $this->db->where('id_kunjungan', $id)->update('tamdes_kunjungan', $update);
+                $this->audit('save_dtsen', 'visit', $id, ['status_from' => $visit_check->status, 'status_to' => $next_status]);
+            }
+
+            $this->json_response(['success' => true, 'data' => $saved, 'message' => 'Data DTSEN berhasil disimpan']);
+
+        } else {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+    }
+}

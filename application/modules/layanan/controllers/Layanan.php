@@ -19,32 +19,45 @@ class Layanan extends CI_Controller {
         $this->load->view('form/layanan');
     }
 
+    // Layanan::go_if_not_set() — HAPUS pemakaian ' '
     public function go_if_not_set()
     {
-        if (!$this->session->userdata('layanan_terpilih')) {
-            $this->session->set_userdata('layanan_terpilih', ' ');
-            $this->session->set_userdata('jenis_layanan', ' ');
+        // Jika belum pilih layanan → balik ke halaman layanan
+        if (!$this->session->userdata('jenis_layanan')) {
+            return redirect('layanan');
         }
-        redirect('selamat_datang');
+
+        // Kalau sudah pilih → langsung masuk form pertama
+        return redirect('selamat_datang'); 
     }
+
 
     public function go() {
-        $layanan = trim($this->input->post('layanan'));
+        $layanan = trim($this->input->post('layanan') ?? '');
 
-        if ($layanan === '' || $layanan === ' ') {
+        if ($layanan === '') {
             $this->session->set_flashdata('error', 'Harap pilih layanan terlebih dahulu.');
-            redirect('layanan');
-            return;
+            return redirect('layanan');
         }
 
+        // set session yang dipakai seluruh alur
         $this->session->set_userdata('jenis_layanan', $layanan);
 
-        $id_kunjungan = $this->session->userdata('id_kunjungan');
-        if ($id_kunjungan) {
-            $this->db->where('id_kunjungan', $id_kunjungan)
-                     ->update('tamdes_kunjungan', ['jenis_layanan' => $layanan]);
+        // Reset pilihan status (existing/new) setiap kali layanan diganti
+        $this->session->unset_userdata('status_pilihan');
+
+        // Jika ada konteks kunjungan dalam session, batasi update supaya tidak mengubah data historis.
+        $id_kunjungan = (int) ($this->session->userdata('id_kunjungan') ?? 0);
+        $id_user = (int) ($this->session->userdata('id_user') ?? 0);
+        if ($id_kunjungan > 0 && $id_user > 0) {
+            $this->db
+                ->where('id_kunjungan', $id_kunjungan)
+                ->where('id_user', $id_user)
+                ->where('DATE(date_visit)', date('Y-m-d'))
+                ->update('tamdes_kunjungan', ['jenis_layanan' => $layanan]);
         }
 
-        redirect(base_url("selamat_datang/check"));
+        return redirect('selamat_datang/check');
     }
+
 }

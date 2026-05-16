@@ -57,6 +57,80 @@
 
 /*
  *---------------------------------------------------------------
+ * OPTIONAL .env LOADER (local/dev)
+ *---------------------------------------------------------------
+ * Allows setting environment variables via a local .env file.
+ * - The file is NOT meant to be committed.
+ * - Existing real environment variables are NOT overridden.
+ */
+	$__envFile = __DIR__ . '/.env';
+	if (is_readable($__envFile))
+	{
+		$__lines = file($__envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+		if (is_array($__lines))
+		{
+			foreach ($__lines as $__line)
+			{
+				$__line = trim($__line);
+				if ($__line === '' || $__line[0] === '#' || $__line[0] === ';')
+				{
+					continue;
+				}
+				$__pos = strpos($__line, '=');
+				if ($__pos === FALSE)
+				{
+					continue;
+				}
+				$__key = trim(substr($__line, 0, $__pos));
+				$__val = trim(substr($__line, $__pos + 1));
+				if ($__key === '' || getenv($__key) !== FALSE)
+				{
+					continue;
+				}
+				// strip optional surrounding quotes
+				$__len = strlen($__val);
+				if ($__len >= 2)
+				{
+					$__first = $__val[0];
+					$__last = $__val[$__len - 1];
+					if (($__first === '"' && $__last === '"') || ($__first === "'" && $__last === "'"))
+					{
+						$__val = substr($__val, 1, -1);
+					}
+				}
+				putenv($__key . '=' . $__val);
+				$_ENV[$__key] = $__val;
+				$_SERVER[$__key] = $__val;
+			}
+		}
+	}
+
+/*
+ *---------------------------------------------------------------
+ * HTTPS DETECTION BEHIND REVERSE PROXY
+ *---------------------------------------------------------------
+ * CodeIgniter's is_https() relies on $_SERVER['HTTPS'] or port 443.
+ * When SSL is terminated at a reverse proxy, PHP may only see HTTP.
+ * If so, secure cookies + CSRF cookies won't be sent.
+ */
+	if (PHP_SAPI !== 'cli')
+	{
+		$__https = $_SERVER['HTTPS'] ?? '';
+		if ($__https === '' || $__https === 'off')
+		{
+			$__xfp = strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+			$__xfs = strtolower((string) ($_SERVER['HTTP_X_FORWARDED_SSL'] ?? ''));
+			$__xfport = (string) ($_SERVER['HTTP_X_FORWARDED_PORT'] ?? '');
+			if ($__xfp === 'https' || $__xfs === 'on' || $__xfport === '443')
+			{
+				$_SERVER['HTTPS'] = 'on';
+				$_SERVER['SERVER_PORT'] = '443';
+			}
+		}
+	}
+
+/*
+ *---------------------------------------------------------------
  * ERROR REPORTING
  *---------------------------------------------------------------
  *

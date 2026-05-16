@@ -112,7 +112,7 @@ class Api_base extends CI_Controller {
 
     /**
      * Layanan-based authorization. Pastikan role user sesuai dengan jenis layanan visit.
-     * - petugas_pst: 4 layanan PST (Perpustakaan, Konsultasi Statistik, Rekomendasi, Penjualan)
+     * - petugas_pst: 4 layanan SKD (Perpustakaan, Konsultasi Statistik, Rekomendasi, Penjualan) + Konsultasi DTSEN
      * - resepsionis: layanan front-office (Lainnya, Keperluan Pimpinan)
      * - admin/superadmin: bypass (full access)
      * - operator (legacy): bypass (untuk backward compat)
@@ -136,11 +136,13 @@ class Api_base extends CI_Controller {
             $list = is_array($decoded) ? $decoded : [$jenis_layanan_raw];
         }
 
+        // PST role mencakup 4 layanan inti SKD + Konsultasi DTSEN (PST tapi tanpa SKD eval).
         $pst_services = [
             'Perpustakaan',
             'Konsultasi Statistik',
             'Rekomendasi Kegiatan Statistik',
             'Penjualan Produk Statistik',
+            'Konsultasi DTSEN',
         ];
         $resepsionis_services = ['Lainnya', 'Keperluan Pimpinan'];
 
@@ -164,10 +166,90 @@ class Api_base extends CI_Controller {
     }
 
     /**
+     * Strategy C: tolak kombinasi PST + Resepsionis (cross visit).
+     * Tamu harus pilih satu kategori saja. Kalau campur, return 400.
+     */
+    protected function validate_no_cross_layanan($jenis_layanan_raw) {
+        $list = [];
+        if (is_array($jenis_layanan_raw)) {
+            $list = $jenis_layanan_raw;
+        } elseif (is_string($jenis_layanan_raw) && $jenis_layanan_raw !== '') {
+            $decoded = json_decode($jenis_layanan_raw, true);
+            $list = is_array($decoded) ? $decoded : [$jenis_layanan_raw];
+        }
+        // 3 grup mutual-exclusive. Cermin frontend src/lib/role-access.ts getServiceGroup().
+        $skd_services   = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
+        $dtsen_services = ['Konsultasi DTSEN'];
+        $resep_services = ['Lainnya', 'Keperluan Pimpinan'];
+
+        $groups = [];
+        foreach ($list as $l) {
+            if (in_array($l, $skd_services, true))       $groups['SKD'] = true;
+            elseif (in_array($l, $dtsen_services, true)) $groups['DTSEN'] = true;
+            elseif (in_array($l, $resep_services, true)) $groups['RESEPSIONIS'] = true;
+        }
+        if (count($groups) > 1) {
+            $this->json_response([
+                'success' => false,
+                'message' => 'Tidak bisa mencampur kategori layanan. Pilih satu grup saja: SKD inti (Perpustakaan/Konsultasi/Rekomendasi/Penjualan), Konsultasi DTSEN, atau Front-office (Lainnya/Keperluan Pimpinan).',
+            ], 400);
+        }
+    }
+
+    /**
+     * Validasi kode sarana harus sesuai grup layanan terpilih.
+     * Cermin frontend src/lib/role-access.ts getAllowedSaranaCodes().
+     * - SKD: 1, 2, 4, 9, 16, 32 (6 sarana standar BPS)
+     * - DTSEN: 1 (PST datang langsung saja)
+     * - Resepsionis: 33, 34, 35, 36 (4 ruangan internal)
+     */
+    protected function validate_sarana_for_layanan($jenis_layanan_raw, $sarana_raw) {
+        $layanan_list = [];
+        if (is_array($jenis_layanan_raw)) {
+            $layanan_list = $jenis_layanan_raw;
+        } elseif (is_string($jenis_layanan_raw) && $jenis_layanan_raw !== '') {
+            $decoded = json_decode($jenis_layanan_raw, true);
+            $layanan_list = is_array($decoded) ? $decoded : [$jenis_layanan_raw];
+        }
+        $sarana_list = is_array($sarana_raw) ? $sarana_raw : (json_decode((string)$sarana_raw, true) ?: []);
+        if (empty($layanan_list) || empty($sarana_list)) return;
+
+        $skd_services   = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
+        $dtsen_services = ['Konsultasi DTSEN'];
+        $resep_services = ['Lainnya', 'Keperluan Pimpinan'];
+
+        // Determine grup pertama yang dikenal (asumsi validate_no_cross_layanan sudah dipanggil duluan).
+        $group = null;
+        foreach ($layanan_list as $l) {
+            if (in_array($l, $skd_services, true))       { $group = 'SKD'; break; }
+            if (in_array($l, $dtsen_services, true))     { $group = 'DTSEN'; break; }
+            if (in_array($l, $resep_services, true))     { $group = 'RESEPSIONIS'; break; }
+        }
+        if ($group === null) return;
+
+        $allowed = [
+            'SKD'         => [1, 2, 4, 9, 16, 32],
+            'DTSEN'       => [1],
+            'RESEPSIONIS' => [33, 34, 35, 36],
+        ][$group];
+
+        foreach ($sarana_list as $code) {
+            $code_int = (int)$code;
+            if (!in_array($code_int, $allowed, true)) {
+                $this->json_response([
+                    'success' => false,
+                    'message' => "Kode sarana {$code_int} tidak diperbolehkan untuk grup layanan {$group}.",
+                ], 400);
+            }
+        }
+    }
+
+    /**
      * Tentukan status finalisasi berdasarkan jenis layanan.
-     * - PST (Perpustakaan, Konsultasi, Rekomendasi, Penjualan) → 'menunggu_evaluasi' (perlu evaluasi tablet)
-     * - Resepsionis (Lainnya, Keperluan Pimpinan) → 'selesai' langsung (tidak perlu evaluasi)
-     * - Multi-layanan: jika ada minimal satu PST → tetap 'menunggu_evaluasi'
+     * - SKD (4 layanan inti: Perpustakaan, Konsultasi, Rekomendasi, Penjualan) → 'menunggu_evaluasi'
+     * - Konsultasi DTSEN → 'selesai' langsung (PST role tapi di luar kuesioner SKD)
+     * - Resepsionis (Lainnya, Keperluan Pimpinan) → 'selesai' langsung
+     * - Multi-layanan: jika ada minimal satu SKD → tetap 'menunggu_evaluasi'
      */
     protected function next_status_after_completion($jenis_layanan_raw) {
         $list = [];
@@ -177,14 +259,15 @@ class Api_base extends CI_Controller {
             $decoded = json_decode($jenis_layanan_raw, true);
             $list = is_array($decoded) ? $decoded : [$jenis_layanan_raw];
         }
-        $pst_services = [
+        // Hanya 4 inti SKD yang memicu evaluasi tablet. DTSEN PST-role tapi skip eval.
+        $skd_services = [
             'Perpustakaan',
             'Konsultasi Statistik',
             'Rekomendasi Kegiatan Statistik',
             'Penjualan Produk Statistik',
         ];
         foreach ($list as $layanan) {
-            if (in_array($layanan, $pst_services, true)) {
+            if (in_array($layanan, $skd_services, true)) {
                 return 'menunggu_evaluasi';
             }
         }
@@ -227,7 +310,10 @@ class Api_base extends CI_Controller {
             return null;
         }
 
-        $prefix = strtoupper(substr($jenis_layanan, 0, 1));
+        // Override prefix khusus: DTSEN → "D" (membedakan dari "K" Konsultasi Statistik di TV)
+        $prefix = strtolower($jenis_layanan) === 'konsultasi dtsen'
+            ? 'D'
+            : strtoupper(substr($jenis_layanan, 0, 1));
         $today  = date('Y-m-d');
 
         $count = $this->db->where('DATE(date_visit)', $today)

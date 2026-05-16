@@ -4,10 +4,27 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 class JWT_Helper {
 
     private $secret;
-    private $expiry = 86400;
+    private $expiry = 14400; // 4 hours
 
     public function __construct() {
-        $this->secret = getenv('JWT_SECRET') ?: 'tamdes-jwt-secret-change-in-production';
+        $secret = getenv('JWT_SECRET');
+        if (!$secret || $secret === '') {
+            // Try loading from .env directly
+            $envFile = FCPATH . '.env';
+            if (is_readable($envFile)) {
+                foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+                    if (strpos(trim($line), 'JWT_SECRET=') === 0) {
+                        $secret = trim(substr(trim($line), 11));
+                        break;
+                    }
+                }
+            }
+        }
+        if (!$secret || strlen($secret) < 32) {
+            log_message('error', 'JWT_SECRET not set or too short. Set a strong secret in .env');
+            $secret = hash('sha256', 'fallback-' . FCPATH); // deterministic but unique per install
+        }
+        $this->secret = $secret;
     }
 
     public function encode($payload) {

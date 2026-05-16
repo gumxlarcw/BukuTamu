@@ -5,24 +5,39 @@ require_once APPPATH . 'modules/api/controllers/Api_base.php';
 
 class Guests extends Api_base {
 
+    // Columns safe for JSON (excludes foto longblob)
+    private $safe_columns = 'id_user, tgldatang, nama, email, notel, jeniskelamin, umur, disabilitas, jenis_disabilitas, pendidikan, pekerjaan, pekerjaan_lainnya, kategori_instansi, kategori_lainnya, nama_instansi, pemanfaatan, pemanfaatan_lainnya, pengaduan, registered_via';
+
     public function index() {
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $this->require_auth();
+
             $search = $this->input->get('search');
-            $page = (int) ($this->input->get('page') ?: 1);
-            $limit = (int) ($this->input->get('limit') ?: 10);
+            $page = max(1, (int) ($this->input->get('page') ?: 1));
+            $limit = max(1, (int) ($this->input->get('limit') ?: 10));
             $offset = ($page - 1) * $limit;
 
-            $this->db->from('tamdes_buku');
             if ($search) {
-                $this->db->group_start();
-                $this->db->like('nama', $search);
-                $this->db->or_like('email', $search);
-                $this->db->or_like('nama_instansi', $search);
-                $this->db->group_end();
+                $this->db->group_start()
+                         ->like('nama', $search)
+                         ->or_like('email', $search)
+                         ->or_like('nama_instansi', $search)
+                         ->group_end();
             }
-            $total = $this->db->count_all_results('', false);
-            $guests = $this->db->limit($limit, $offset)->get()->result();
+            $total = $this->db->count_all_results('tamdes_buku');
+
+            $this->db->select($this->safe_columns);
+            if ($search) {
+                $this->db->group_start()
+                         ->like('nama', $search)
+                         ->or_like('email', $search)
+                         ->or_like('nama_instansi', $search)
+                         ->group_end();
+            }
+            $guests = $this->db->order_by('id_user', 'DESC')
+                               ->limit($limit, $offset)
+                               ->get('tamdes_buku')
+                               ->result();
 
             $this->json_response([
                 'success' => true,
@@ -31,15 +46,15 @@ class Guests extends Api_base {
                 'pagination' => [
                     'page' => $page,
                     'limit' => $limit,
-                    'total' => $total,
-                    'totalPages' => max(1, ceil($total / $limit)),
+                    'total' => (int) $total,
+                    'totalPages' => max(1, (int) ceil($total / $limit)),
                 ],
             ]);
+
         } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $this->require_auth();
             $input = $this->get_json_input();
 
-            // Generate id_user (not auto-increment)
             $max = $this->db->select_max('id_user')->get('tamdes_buku')->row()->id_user;
             $new_id = $max ? $max + 1 : 8200001;
 
@@ -56,10 +71,13 @@ class Guests extends Api_base {
                 'pemanfaatan' => $input['pemanfaatan'] ?? '',
                 'pengaduan' => $input['pengaduan'] ?? '',
                 'tgldatang' => date('Y-m-d'),
+                'registered_via' => 'admin:' . ($this->current_user->username ?? 'unknown'),
                 'face_descriptor' => isset($input['face_descriptor']) ? json_encode($input['face_descriptor']) : null,
             ];
             $this->db->insert('tamdes_buku', $data);
-            $guest = $this->db->get_where('tamdes_buku', ['id_user' => $new_id])->row();
+            $guest = $this->db->select($this->safe_columns)
+                              ->get_where('tamdes_buku', ['id_user' => $new_id])
+                              ->row();
             $this->json_response(['success' => true, 'data' => $guest, 'message' => 'Tamu berhasil ditambahkan'], 201);
         }
     }
@@ -68,7 +86,9 @@ class Guests extends Api_base {
         $this->require_auth();
 
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-            $guest = $this->db->get_where('tamdes_buku', ['id_user' => $id])->row();
+            $guest = $this->db->select($this->safe_columns)
+                              ->get_where('tamdes_buku', ['id_user' => $id])
+                              ->row();
             if (!$guest) {
                 $this->json_response(['success' => false, 'message' => 'Tamu tidak ditemukan'], 404);
             }
@@ -76,15 +96,58 @@ class Guests extends Api_base {
 
         } elseif ($_SERVER['REQUEST_METHOD'] === 'PUT') {
             $input = $this->get_json_input();
-            // Remove id_user from update data to prevent PK modification
-            unset($input['id_user']);
-            $this->db->where('id_user', $id)->update('tamdes_buku', $input);
-            $guest = $this->db->get_where('tamdes_buku', ['id_user' => $id])->row();
+            $allowed = ['nama', 'email', 'notel', 'jeniskelamin', 'umur',
+                        'disabilitas', 'jenis_disabilitas', 'pendidikan',
+                        'pekerjaan', 'pekerjaan_lainnya', 'kategori_instansi',
+                        'kategori_lainnya', 'nama_instansi', 'pemanfaatan',
+                        'pemanfaatan_lainnya', 'pengaduan'];
+            $data = array_intersect_key($input, array_flip($allowed));
+            if (empty($data)) {
+                $this->json_response(['success' => false, 'message' => 'Tidak ada field valid untuk diupdate'], 400);
+            }
+            // Get old data for diff
+            $old = $this->db->get_where('tamdes_buku', ['id_user' => $id])->row_array();
+            $this->db->where('id_user', $id)->update('tamdes_buku', $data);
+            $changes = $this->diff_changes($old ?: [], $data);
+            if (!empty($changes)) {
+                $this->audit('update', 'guest', $id, $changes);
+            }
+            $guest = $this->db->select($this->safe_columns)
+                              ->get_where('tamdes_buku', ['id_user' => $id])
+                              ->row();
             $this->json_response(['success' => true, 'data' => $guest, 'message' => 'Tamu berhasil diupdate']);
 
         } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+            $this->require_role('admin');
+            $this->audit('delete', 'guest', $id);
             $this->db->where('id_user', $id)->delete('tamdes_buku');
             $this->json_response(['success' => true, 'data' => null, 'message' => 'Tamu berhasil dihapus']);
         }
+    }
+
+    /** GET /api/guests/:id/visits — visit history for a guest */
+    public function visits($id) {
+        $this->require_auth();
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+        $visits = $this->db->select('id_kunjungan, jenis_layanan, date_visit, status, nomor_antrian, rating_pengunjung')
+                           ->where('id_user', $id)
+                           ->order_by('date_visit', 'DESC')
+                           ->get('tamdes_kunjungan')->result();
+        $this->json_response(['success' => true, 'data' => $visits, 'message' => 'OK']);
+    }
+
+    /** GET /api/guests/:id/photo — serve photo as image */
+    public function photo($id) {
+        $row = $this->db->select('foto')->get_where('tamdes_buku', ['id_user' => $id])->row();
+        if (!$row || !$row->foto) {
+            http_response_code(404);
+            exit;
+        }
+        header('Content-Type: image/jpeg');
+        header('Cache-Control: public, max-age=3600');
+        echo $row->foto;
+        exit;
     }
 }

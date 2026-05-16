@@ -3,7 +3,8 @@
 <h3>Edit Data Tamu</h3>
 
 <form action="<?= site_url('admin/update/' . $tamu->id_user) ?>" method="post">
-    <input type="hidden" name="id_user" value="<?= $tamu->id_user ?>">
+    <input type="hidden" name="<?= $this->security->get_csrf_token_name(); ?>" value="<?= $this->security->get_csrf_hash(); ?>">
+    <input type="hidden" name="id_user" value="<?= htmlspecialchars($tamu->id_user, ENT_QUOTES, 'UTF-8') ?>">
 
     <div class="mb-3">
         <label>Tanggal Datang</label>
@@ -12,23 +13,23 @@
 
     <div class="mb-3">
         <label>Nama</label>
-        <input type="text" name="nama" value="<?= $tamu->nama ?>" class="form-control" required>
+        <input type="text" name="nama" value="<?= htmlspecialchars($tamu->nama, ENT_QUOTES, 'UTF-8') ?>" class="form-control" required>
     </div>
 
     <div class="mb-3">
         <label>Email</label>
-        <input type="email" name="email" value="<?= $tamu->email ?>" class="form-control" required>
+        <input type="email" name="email" value="<?= htmlspecialchars($tamu->email, ENT_QUOTES, 'UTF-8') ?>" class="form-control" required>
     </div>
 
     <div class="mb-3">
         <label>No HP</label>
-        <input type="text" name="notel" value="<?= $tamu->notel ?>" class="form-control" required>
+        <input type="text" name="notel" value="<?= htmlspecialchars($tamu->notel, ENT_QUOTES, 'UTF-8') ?>" class="form-control" required>
     </div>
 
     <div class="mb-3">
         <label>Jenis Kelamin</label><br>
-        <label><input type="radio" name="jeniskelamin" value="Laki-laki" <?= $tamu->jeniskelamin == 'Laki-laki' ? 'checked' : '' ?>> Laki-laki</label>
-        <label><input type="radio" name="jeniskelamin" value="Perempuan" <?= $tamu->jeniskelamin == 'Perempuan' ? 'checked' : '' ?>> Perempuan</label>
+        <label><input type="radio" name="jeniskelamin" value="Laki-laki" <?= ($tamu->jeniskelamin == 'Laki-laki') ? 'checked' : '' ?>> Laki-laki</label>
+        <label><input type="radio" name="jeniskelamin" value="Perempuan" <?= ($tamu->jeniskelamin == 'Perempuan') ? 'checked' : '' ?>> Perempuan</label>
     </div>
 
     <div class="mb-3">
@@ -69,7 +70,7 @@
 
     <div class="mb-3">
         <label>Nama Instansi</label>
-        <input type="text" name="nama_instansi" value="<?= $tamu->nama_instansi ?>" class="form-control" required>
+        <input type="text" name="nama_instansi" value="<?= htmlspecialchars($tamu->nama_instansi, ENT_QUOTES, 'UTF-8') ?>" class="form-control" required>
     </div>
 
     <div class="mb-3">

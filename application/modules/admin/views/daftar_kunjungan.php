@@ -4,7 +4,7 @@
 
 <form method="get" class="row g-2 mb-3">
     <div class="col-md-4">
-        <input type="text" name="q" value="<?= $this->input->get('q') ?>" class="form-control" placeholder="Cari nama, instansi, layanan, status...">
+    <input type="text" name="q" value="<?= htmlspecialchars((string) $this->input->get('q'), ENT_QUOTES, 'UTF-8') ?>" class="form-control" placeholder="Cari nama, instansi, layanan, status...">
     </div>
     <div class="col-md-2">
         <select name="layanan" class="form-select">
@@ -54,49 +54,73 @@
     </div>
 </form>
 
-<table class="table table-bordered table-hover mt-4">
+<div class="table-responsive">
+  <table class="table table-bordered table-hover mt-4">
     <thead class="table-primary">
-        <tr>
-            <th>No</th>    
-            <th>Timestamp</th>    
-            <th>Nama</th>
-            <th>Instansi</th>
-            <th>Jenis Layanan</th> <!-- ✅ Tambahkan ini -->
-            <th>Status</th>
-            <th>Keterangan</th>
-            <th>Aksi</th>
-        </tr>
+      <tr>
+        <th>No</th>    
+        <th>Timestamp</th>    
+        <th>Nama</th>
+        <th>Instansi</th>
+        <th>Jenis Layanan</th> <!-- ✅ Tambahkan ini -->
+        <th>Status</th>
+        <th>Keterangan</th>
+        <th>Waktu Selesai</th>
+        <th>Durasi</th>
+        <th>Aksi</th>
+      </tr>
     </thead>
     <tbody>
-        <?php if (!empty($kunjungan)): ?>
-            <?php $no = 1; foreach ($kunjungan as $k): ?>
-                <?php
-                    $status = strtolower(trim($k->status));
-                    if ($status === 'selesai') {
-                        $badge_class = 'success';
-                    } elseif ($status === 'proses') {
-                        $badge_class = 'warning';
-                    } elseif ($status === 'menunggu_evaluasi') {
-                        $badge_class = 'info';
-                    } elseif ($status === 'antri') {
-                        $badge_class = 'dark';
-                    } elseif (!$status) {
-                        $badge_class = 'secondary';
-                        $status = 'tidak diketahui';
-                    } else {
-                        $badge_class = 'secondary';
-                    }
+      <?php if (!empty($kunjungan)): ?>
+        <?php $no = 1; foreach ($kunjungan as $k): ?>
+          <?php
+            $status = strtolower(trim($k->status));
+            if ($status === 'selesai') {
+              $badge_class = 'success';
+            } elseif ($status === 'proses') {
+              $badge_class = 'warning';
+            } elseif ($status === 'menunggu_evaluasi') {
+              $badge_class = 'info';
+            } elseif ($status === 'antri') {
+              $badge_class = 'dark';
+            } elseif (!$status) {
+              $badge_class = 'secondary';
+              $status = 'tidak diketahui';
+            } else {
+              $badge_class = 'secondary';
+            }
 
-                    $status_label = ucfirst($status);
-                ?>
-                <tr>
-                    <td><?= $no++ ?></td>
-                    <td><?= date('Y-m-d H:i:s', strtotime($k->date_visit)) ?></td>
-                    <td><?= $k->nama ?></td>
-                    <td><?= $k->nama_instansi ?></td>
-                    <td><?= $k->jenis_layanan ?></td> <!-- ✅ Tambahkan ini -->
-                    <td><span class="badge bg-<?= $badge_class ?>"><?= $status_label ?></span></td>
-                    <td><?= $k->hasil_konsultasi ? $k->hasil_konsultasi : '-' ?></td>
+            $status_label = ucfirst($status);
+          ?>
+          <tr>
+            <td><?= $no++ ?></td>
+            <td><?= date('Y-m-d H:i:s', strtotime($k->date_visit)) ?></td>
+            <td><?= htmlspecialchars($k->nama, ENT_QUOTES, 'UTF-8') ?></td>
+            <td><?= htmlspecialchars($k->nama_instansi, ENT_QUOTES, 'UTF-8') ?></td>
+            <td><?= htmlspecialchars($k->jenis_layanan, ENT_QUOTES, 'UTF-8') ?></td> <!-- ✅ Tambahkan ini -->
+            <td><span class="badge bg-<?= $badge_class ?>"><?= $status_label ?></span></td>
+            <td><?= $k->hasil_konsultasi ? htmlspecialchars($k->hasil_konsultasi, ENT_QUOTES, 'UTF-8') : '-' ?></td>
+            <td>
+              <?php if (!empty($k->selesai_timestamp)): ?>
+                <?= date('Y-m-d H:i:s', strtotime($k->selesai_timestamp)) ?>
+              <?php else: ?>
+                -
+              <?php endif; ?>
+            </td>
+            <td>
+              <?php if (!empty($k->durasi_detik)): 
+                $d = $k->durasi_detik;
+                $hari   = floor($d / 86400);
+                $jam    = floor(($d % 86400) / 3600);
+                $menit  = floor(($d % 3600) / 60);
+                $detik  = $d % 60;
+
+                echo "$hari Hari $jam Jam $menit Menit $detik Detik";
+              else:
+                echo "-";
+              endif; ?>
+                    </td>
+
                     <td>
                         <button class="btn btn-sm btn-primary mb-1" onclick="loadDetail(<?= $k->id_kunjungan ?>)">Detail</button>
 
@@ -121,7 +145,9 @@
                                 Edit Status
                             </button>
                         <?php endif; ?>
-
+                      <button class="btn btn-sm btn-danger mb-1" onclick="confirmDelete(<?= $k->id_kunjungan ?>)">
+                          Hapus
+                      </button>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -129,7 +155,8 @@
             <tr><td colspan="7" class="text-center">Belum ada kunjungan tercatat.</td></tr>
         <?php endif; ?>
     </tbody>
-</table>
+  </table>
+  </div>
 <!-- Modal -->
 <div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
@@ -142,6 +169,7 @@
 <div class="modal fade" id="editLayananModal" tabindex="-1" aria-labelledby="editLayananModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <form method="post" action="<?= site_url('admin/update_jenis_layanan') ?>">
+      <input type="hidden" name="<?= $this->security->get_csrf_token_name(); ?>" value="<?= $this->security->get_csrf_hash(); ?>">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Edit Jenis Layanan</h5>
@@ -175,6 +203,7 @@
 <div class="modal fade" id="ringkasanModal" tabindex="-1" aria-labelledby="ringkasanModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <form method="post" action="<?= site_url('admin/update_ringkasan') ?>">
+      <input type="hidden" name="<?= $this->security->get_csrf_token_name(); ?>" value="<?= $this->security->get_csrf_hash(); ?>">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Isi Ringkasan Kunjungan</h5>
@@ -202,6 +231,7 @@
 <div class="modal fade" id="editStatusModal" tabindex="-1" aria-labelledby="editStatusModalLabel" aria-hidden="true">
   <div class="modal-dialog">
     <form method="post" action="<?= site_url('admin/update_status_kunjungan') ?>">
+      <input type="hidden" name="<?= $this->security->get_csrf_token_name(); ?>" value="<?= $this->security->get_csrf_hash(); ?>">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title">Edit Status Kunjungan</h5>
@@ -267,6 +297,12 @@ function openEditStatusModal(id, status) {
     document.getElementById('edit_status_select').value = status;
     new bootstrap.Modal(document.getElementById('editStatusModal')).show();
 }
+
+function confirmDelete(id) {
+    if (!confirm('Yakin ingin menghapus data kunjungan ini? Tindakan ini tidak dapat dibatalkan.')) return;
+    window.location.href = "<?= site_url('admin/delete_kunjungan/') ?>" + id;
+}
+
 
 </script>
 
