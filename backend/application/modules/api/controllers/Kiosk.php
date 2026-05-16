@@ -10,6 +10,12 @@ class Kiosk extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
+        // Rate-limit this enumeration endpoint. Normal kiosk fetches once per
+        // page-load → way under 30/min. Scrapers get 429'd after a few bursts.
+        // Not a hard perimeter (only Apache-level IP allowlist is); just slows
+        // mass extraction of names + face descriptors.
+        $this->require_rate_limit('kiosk/face-data', 30);
+
         $guests = $this->db
             ->select('id_user, nama, face_descriptor')
             ->from('tamdes_buku')
@@ -30,6 +36,9 @@ class Kiosk extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
+
+        // Same rate-limit as face-data — both endpoints return the full guest set.
+        $this->require_rate_limit('kiosk/guest-list', 30);
 
         $guests = $this->db
             ->select('id_user, nama, nama_instansi')

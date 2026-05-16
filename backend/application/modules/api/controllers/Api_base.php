@@ -342,6 +342,48 @@ class Api_base extends CI_Controller {
         return $prop->getValue($this->jwt_helper);
     }
 
+    /**
+     * Soft rate limit for unauthenticated endpoints. Counts hits per (IP, endpoint)
+     * in the last 60 seconds; if over $max_per_minute, returns 429 + exits.
+     *
+     * Used by kiosk endpoints that return data sets we don't want scraped at high
+     * speed (face descriptors, guest lists). Not a security perimeter — a
+     * determined scraper can still extract everything slowly. To fully prevent
+     * enumeration, restrict source IPs at Apache (`Require ip 10.x.x.x` etc.).
+     *
+     * Storage: tamdes_rate_limit. Inline pruning (rows older than 5 min for this
+     * IP) keeps the table bounded without a separate cron.
+     */
+    protected function require_rate_limit($endpoint, $max_per_minute = 30) {
+        $ip = $this->input->ip_address();
+
+        // Prune stale rows for this IP (keep last 5 min only) — cheap thanks to
+        // the (ip_address, created_at) index.
+        $this->db->where('ip_address', $ip)
+                 ->where('created_at <', date('Y-m-d H:i:s', time() - 300))
+                 ->delete('tamdes_rate_limit');
+
+        // Count hits in the last minute for this (ip, endpoint).
+        $recent = $this->db
+            ->where('ip_address', $ip)
+            ->where('endpoint', $endpoint)
+            ->where('created_at >=', date('Y-m-d H:i:s', time() - 60))
+            ->count_all_results('tamdes_rate_limit');
+
+        if ($recent >= $max_per_minute) {
+            header('Retry-After: 60');
+            $this->json_response([
+                'success' => false,
+                'message' => "Terlalu banyak permintaan. Coba lagi setelah 60 detik.",
+            ], 429);
+        }
+
+        $this->db->insert('tamdes_rate_limit', [
+            'ip_address' => $ip,
+            'endpoint'   => $endpoint,
+        ]);
+    }
+
     protected function audit($action, $target_type, $target_id = null, $detail = null) {
         $user = $this->current_user->username ?? 'system';
         $this->db->insert('tamdes_audit_log', [
