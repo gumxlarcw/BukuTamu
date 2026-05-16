@@ -1,0 +1,15 @@
+{
+  "name": "tamdes-print",
+  "version": "1.1.0",
+  "description": "Print server lokal kiosk BPS Malut — POS-58 thermal via escpos-usb",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "escpos": "^2.5.2",
+    "escpos-usb": "^3.0.0",
+    "express": "^4.19.2"
+  }
+}
