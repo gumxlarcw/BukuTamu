@@ -7,6 +7,7 @@ class Audit extends Api_base {
 
     public function index() {
         $this->require_auth();
+        $this->require_role('admin');
 
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
