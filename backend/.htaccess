@@ -1,0 +1,21 @@
+# Block sensitive files from web access
+<FilesMatch "^\.env">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "\.backup$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # kalau file/folder ada, langsung sajikan
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # lempar ke index.php
+    RewriteRule ^(.*)$ index.php?/$1 [L]
+</IfModule>
+

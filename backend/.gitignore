@@ -1,0 +1,26 @@
+.vscode/
+node_modules/
+assets/
+database.php
+system/
+.php-cs-fixer.cache
+.prettier.js
+.php-cs-fixer.php
+.prettierrc.backup
+package-lock.json
+
+# Local environment variables (do NOT commit secrets)
+.env
+.env.local
+
+# Local backup artifacts (CLAUDE.md per-file backup rule — never commit)
+*.backup
+*.backup2
+*.tmp
+
+# Runtime logs
+application/logs/
+
+# DB dump files (data, not code)
+backup_*.sql
+backups/
