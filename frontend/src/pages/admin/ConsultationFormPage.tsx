@@ -1,0 +1,175 @@
+import { useState, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { consultationsApi } from '@/api/consultations'
+import { visitsApi } from '@/api/visits'
+import { ConsultationDataForm } from '@/components/admin/ConsultationDataForm'
+import { parseLayanan, type ConsultationDataRow } from '@/types/visit'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { StatusBadge } from '@/components/shared/StatusBadge'
+import { ArrowLeft, Save } from 'lucide-react'
+
+export default function ConsultationFormPage() {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const visitId = Number(id)
+
+  const [rows, setRows] = useState<ConsultationDataRow[]>([])
+  const [hasilKonsultasi, setHasilKonsultasi] = useState('')
+
+  // Fetch visit info — backend Visits::detail() membungkus dengan { visit, consultation, evaluation }
+  const { data: visit, isLoading: visitLoading } = useQuery({
+    queryKey: ['visit', visitId],
+    queryFn: () =>
+      visitsApi.get(visitId).then(r => {
+        const payload = r.data.data as unknown
+        if (payload && typeof payload === 'object' && 'visit' in payload) {
+          return (payload as { visit: typeof r.data.data }).visit
+        }
+        return r.data.data
+      }),
+    enabled: !!visitId,
+  })
+
+  // Fetch existing consultation data
+  const { data: existingData, isLoading: dataLoading } = useQuery({
+    queryKey: ['consultation-data', visitId],
+    queryFn: () => consultationsApi.getData(visitId).then(r => r.data.data),
+    enabled: !!visitId,
+  })
+
+  // Populate form with existing data, atau auto-add 1 row kosong jika fresh load.
+  useEffect(() => {
+    if (!existingData) return
+    if (existingData.length > 0) {
+      setRows(existingData)
+    } else if (rows.length === 0) {
+      setRows([
+        {
+          rincian_data: '',
+          wilayah_data: '',
+          tahun_awal: new Date().getFullYear(),
+          tahun_akhir: new Date().getFullYear(),
+          level_data: 1,
+          periode_data: 4,
+          status_data: 4,
+          jenis_publikasi: null,
+          judul_publikasi: null,
+          tahun_publikasi: null,
+          digunakan_nasional: null,
+          kualitas: null,
+        },
+      ])
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingData])
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      consultationsApi.saveData(visitId, {
+        kebutuhan_data: rows,
+        hasil_konsultasi: hasilKonsultasi || undefined,
+      }),
+    onSuccess: () => {
+      toast.success('Data konsultasi berhasil disimpan')
+      navigate('/admin/consultations')
+    },
+    onError: () => toast.error('Gagal menyimpan data konsultasi'),
+  })
+
+  const isLoading = visitLoading || dataLoading
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => navigate('/admin/consultations')}
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
+        <div>
+          <h1 className="admin-h1">Form Konsultasi</h1>
+          <p className="admin-subtitle">Catat kebutuhan data pengunjung</p>
+        </div>
+      </div>
+
+      {/* Visitor info */}
+      <div className="admin-card p-6">
+          <h2 className="text-base font-bold mb-3">Informasi Pengunjung</h2>
+          {isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-5 w-48" />
+              <Skeleton className="h-4 w-64" />
+            </div>
+          ) : visit ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+              <div>
+                <p className="text-muted-foreground">Nama</p>
+                <p className="font-semibold">{visit.nama}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Instansi</p>
+                <p className="font-semibold">{visit.nama_instansi}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Layanan</p>
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {parseLayanan(visit.jenis_layanan).map((l, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded bg-orange-100 text-orange-700 text-xs font-medium">{l}</span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-muted-foreground">No. Antrian</p>
+                <p className="font-semibold">{visit.nomor_antrian ?? '-'}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Status</p>
+                <StatusBadge status={visit.status} />
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">Data pengunjung tidak ditemukan.</p>
+          )}
+      </div>
+
+      {/* Consultation data form */}
+      <div className="admin-card p-6">
+          <h2 className="text-base font-bold mb-3">Kebutuhan Data</h2>
+          {isLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-32 rounded-xl" />
+              <Skeleton className="h-32 rounded-xl" />
+            </div>
+          ) : (
+            <ConsultationDataForm
+              rows={rows}
+              hasilKonsultasi={hasilKonsultasi}
+              kategoriInstansi={(visit as { kategori_instansi?: number | string } | undefined)?.kategori_instansi ?? null}
+              onChange={setRows}
+              onHasilChange={setHasilKonsultasi}
+            />
+          )}
+      </div>
+
+      {/* Save button */}
+      <div className="flex justify-end gap-3 pb-6">
+        <Button variant="outline" onClick={() => navigate('/admin/consultations')}>
+          Batal
+        </Button>
+        <Button
+          className="bg-orange-600 hover:bg-orange-700 text-white"
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+        >
+          <Save className="w-4 h-4 mr-2" />
+          {saveMutation.isPending ? 'Menyimpan...' : 'Simpan Data'}
+        </Button>
+      </div>
+    </div>
+  )
+}
