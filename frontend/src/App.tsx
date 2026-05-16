@@ -7,6 +7,7 @@ import { AdminLayout } from '@/layouts/AdminLayout'
 import { lazy, Suspense } from 'react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary'
+import { RequireRole } from '@/components/shared/RequireRole'
 
 // Retry dynamic imports — handles stale chunks after deployments
 function lazyRetry(factory: () => Promise<{ default: React.ComponentType }>) {
@@ -87,8 +88,8 @@ function App() {
                   <Route path="/admin/manual-entry" element={<ManualEntryPage />} />
                   <Route path="/admin/evaluations" element={<EvaluationSummaryPage />} />
                   <Route path="/admin/responden" element={<RespondenTahunanPage />} />
-                  <Route path="/admin/audit" element={<AuditLogPage />} />
-                  <Route path="/admin/users" element={<UserManagementPage />} />
+                  <Route path="/admin/audit" element={<RequireRole min="admin"><AuditLogPage /></RequireRole>} />
+                  <Route path="/admin/users" element={<RequireRole min="superadmin"><UserManagementPage /></RequireRole>} />
                   <Route path="/admin/queue-stats" element={<QueueStatsPage />} />
                 </Route>
                 <Route path="/" element={<LandingPage />} />
