@@ -1,152 +1,113 @@
-# Phase B — Remaining items (require your decision/coordination)
+# Phase B — Status (updated 2026-05-17)
 
-Generated 2026-05-17 after closing Phase A audit findings. Phase A closed C1, C2, C3, M1, M2, M3, M4, M5, M6, M7, M8, N1 — all unilateral fixes that don't touch shared infra or require new credentials from you. Items below need your call.
+Phase A audit fixes (C1–M8, N1) are complete and live; see `AUDIT_2026-05-16.md` §9.
+Phase B (credential rotation) progress below.
 
 ---
 
-## 1. MySQL `root` password rotation
+## ✅ Completed this session
 
-### Why this is still pending
+### 1. ADMIN_PASSWORD_HASH rotation (bukutamu)
 
-During the missing-`.env` investigation on 2026-05-16, the production DB credentials were echoed onto the audit terminal. The bukutamu backend has since been moved to a dedicated `bukutamu_app` MySQL user with `db_tamdes`-only grants, so **the leak no longer grants access to bukutamu's data via the backend**. But the `root` MySQL account is still active with the original (now-known) password, and these services on this server connect as `root`:
-
-| Service | Database | Where credential lives |
-|---------|----------|------------------------|
-| `metabase_db` | metabase_db | Metabase internal config |
-| `email_notify` | email_notify | (need to locate) |
-| `data_bps` | data_bps | (need to locate) |
-| `agenda_work_db` | agenda_work_db | (need to locate) |
-
-A patient attacker with the leaked `root` password and localhost MySQL access can still touch all DBs (`mysql -uroot -p`). MySQL likely binds to `127.0.0.1:3306` only, so this requires shell access — but it's still a real path.
-
-### Two strategies
-
-#### Strategy A — Rotate root password (cheap, one-time)
-
-Single maintenance window. Updates every service's config in lockstep.
-
+Fresh bcrypt hash generated. Password written one-shot to `/tmp/new-admin-password.txt` (root-owned, 0600). Read once and then:
 ```bash
-# 1. Generate new password
+shred -uz /tmp/new-admin-password.txt
+```
+
+### 2. Dedicated MySQL users — 6 services migrated off root
+
+| # | Service | DB | New user | PM2 processes restarted |
+|---|---------|----|----|--------|
+| 1 | bukutamu | db_tamdes | `bukutamu_app` | (PHP-FPM, no restart needed) |
+| 2 | agenda_work | agenda_work_db | `agenda_work_app` | agenda-backend, agenda-frontend, agenda-task-sync |
+| 3 | opac-pst-malut | library_pst | `opac_pst_app` | opac-backend, opac-frontend, opac-paddle-ocr |
+| 4 | toma | toma_db | `toma_app` | toma-backend (also updated `ecosystem.config.cjs` inline env) |
+| 5 | project-data-strategis | project_data_strategis (+ SELECT on data_bps) | `pds_app` | pds-backend, pds-admin, pds-frontend |
+| 6 | sipentas | sipentas_pst | `sipentas_app` | sipentas-backend, sipentas-frontend |
+
+Each user has **minimum grants**: `SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE TEMPORARY TABLES, CREATE, ALTER, INDEX, REFERENCES` on its own database only (no `mysql.*`, no `SUPER`). `pds_app` additionally gets `SELECT` on `data_bps` because pds-backend reads from that DB for its "petaTematik" feature.
+
+### 3. wa-helpdesk — sanitized only
+
+`/var/www/html/wa-helpdesk/.env` is a **dormant file** — the actually-running PM2 processes (`wa-helpdesk-dashboard` at `/var/www/html/wa-helpdesk-dashboard/`, `wa-service` at `/opt/wa-service/`) don't use MySQL at all. The DB referenced in the dormant .env doesn't even exist. Solution: scrubbed the leaked `DB_USER=root` and `DB_PASS=17Agustus` lines to `<rotated-2026-05-17-dormant-file>` markers, no DB rotation needed.
+
+### 4. Safety net — DB backups
+
+Taken before each rotation, preserved at `/var/backups/cred-rotation-20260517/`:
+```
+agenda_work_db.sql.gz                1.8 MB
+library_pst.sql.gz                   18 KB
+project_data_strategis.sql.gz        385 MB
+sipentas_pst.sql.gz                  3.4 KB
+toma_db.sql.gz                       5.9 KB
+```
+Keep these for ~30 days. Restore (if ever needed):
+```bash
+gunzip -c /var/backups/cred-rotation-20260517/<db>.sql.gz | mysql -uroot <db>
+```
+
+The per-service `.env.preRotation` files were shredded — they contained the leaked root credentials. To rollback any service, edit its current `.env` directly (DB_USER=root, DB_PASS=<old-leaked-password>) and `pm2 restart`.
+
+---
+
+## ⏸ Still using MySQL root (3 services)
+
+| # | Service | DB | Why deferred |
+|---|---------|----|----|
+| 7 | `data_bps` | data_bps | Source code path unconfirmed; service may be tied to project-data-strategis (which now has read access). Need to find its actual deployment first. |
+| 8 | `metabase` | metabase_db | Java app at `/opt/metabase` — different stack, config likely in env vars set by systemd or in `metabase.properties`. 6 active connections seen. Risk of breaking BI dashboards if mis-handled. |
+| 9 | `email_notify` | email_notify | **20+ active MySQL connections** — heaviest user. Source location TBD. The high connection count suggests a connection-pool app with no idle timeout; restart impact could be significant. |
+
+Live state (as of 2026-05-17):
+```
+USER                  DB                       conns
+root                  data_bps                 1
+root                  email_notify             20
+root                  metabase_db              6
+```
+
+### Recommended approach for the remaining 3
+
+**Don't do these in a single autonomous session.** Each one needs:
+- Source code location confirmed
+- Restart strategy understood (Java service vs Node app vs Python app)
+- A maintenance window where brief downtime is acceptable
+- Manual verification post-restart (dashboards still load, emails still send, etc.)
+
+When ready, follow the same pattern as Path B:
+1. `mysqldump <db> | gzip > /var/backups/cred-rotation-<date>/<db>.sql.gz`
+2. `CREATE USER` with minimum grants
+3. Test the new user can connect
+4. Update the service's config (file location varies — find with `grep -rE "DB_USER=root\|MYSQL_USER=root\|database.user=root" /etc /opt /var/www`)
+5. Restart the service per its operational pattern
+6. Smoke-test the service's primary path
+7. Verify MySQL processlist shows the new user, not root
+
+---
+
+## ⏸ Eventually — rotate MySQL root password
+
+Once all 9 services are on dedicated users (i.e., when the 3 above are also migrated):
+- No legitimate service uses `root` anymore
+- Any remaining `root` connection in processlist is suspicious
+- Rotate the root password with confidence — nothing breaks
+- The leaked `17Agustus` password becomes useless
+
+Procedure (for that future maintenance window):
+```bash
 NEW_ROOT=$(openssl rand -base64 32 | tr -d '/+=' | head -c 40)
-
-# 2. Apply to MySQL (this disconnects nothing yet — existing sessions keep working)
 sudo mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$NEW_ROOT';"
-sudo mysql -uroot -e "FLUSH PRIVILEGES;"  # optional
-
-# 3. Update each service's config (find these locations first!)
-#    Then restart each service so the next connection uses the new password.
-
-# 4. Update the root mysql client default (so `mysql -uroot ...` keeps working)
-sudo mysql_config_editor remove --login-path=client  # or update ~/.my.cnf
-
-# 5. Test each service can still connect
-```
-
-**Risk:** If you miss a service, its next reconnect fails. Use `SELECT USER FROM information_schema.processlist GROUP BY USER` to discover every connecting client first.
-
-#### Strategy B — Dedicated user per service (clean, durable)
-
-Same pattern we used for bukutamu_app. For each service:
-
-```sql
-CREATE USER 'metabase_app'@'localhost' IDENTIFIED BY '<random>';
-GRANT SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE TEMPORARY TABLES
-  ON metabase_db.* TO 'metabase_app'@'localhost';
-```
-
-Update each service's config to use its dedicated user. Leave `root` alone (the leak still technically reaches `root` but no service is using it, so any unauthorized attempt now stands out in the audit log).
-
-**Eventually**: rotate `root` password too once nothing depends on it. That can happen at your leisure without coordinating with multiple services.
-
-### My recommendation
-
-**Strategy B**. Higher one-time cost (~2-3 hours across all 4+ services) but eliminates this entire class of risk permanently. Each future service rotation is independent. The `root` user stays available for true admin tasks but stops being a backdoor for every app.
-
-### How to find each service's config
-
-```bash
-# Locate where each app's DB password lives:
-sudo find /var/www /opt /etc -name "*.env" -o -name "settings.py" -o -name "database.php" 2>/dev/null \
-  | xargs sudo grep -lE "DB_PASSWORD|DATABASE_URL|password.*root" 2>/dev/null
-
-# Service definitions (systemd unit files often contain DB env vars):
-sudo systemctl cat metabase 2>/dev/null
-ls /etc/systemd/system/ | xargs -I{} sudo grep -l "mysql\|MYSQL" /etc/systemd/system/{} 2>/dev/null
+sudo mysql -uroot -e "FLUSH PRIVILEGES;"
+# Save new password somewhere safe (password manager preferred)
+# Update ~/.my.cnf or login-path for CLI access:
+mysql_config_editor set --login-path=client --user=root --password
 ```
 
 ---
 
-## 2. `ADMIN_PASSWORD_HASH` rotation
+## State of the system right now
 
-### Why pending
-
-The admin password hash was readable when the missing-`.env` was investigated. It's stored in `backend/.env` as a bcrypt hash, used as the fallback when `admin_users` table doesn't match (per `Auth::login`). Real admin users in `admin_users` (admin, nayla, irma, nita) each have their own `password_hash` column — those are independent and unaffected.
-
-### Two options
-
-#### Option A — You provide a new admin password
-
-Tell me a new password. I'll:
-1. Generate the bcrypt hash via `php -r "echo password_hash('YOUR_NEW_PASSWORD', PASSWORD_DEFAULT);"`
-2. Replace `ADMIN_PASSWORD_HASH=` in `backend/.env`
-3. `.env.backup` will reflect the new value (no leftover old hash)
-4. Smoke-test login with new password
-
-#### Option B — I generate a random password
-
-I'll generate, write it to `/tmp/new-admin-password.txt`, you read it once, then we shred the file. The hash goes into `.env` the same way. Useful if you don't have a password manager handy.
-
-### Note
-
-Both options ONLY rotate the `.env` fallback hash. The `admin_users` table users (admin, nayla, irma, nita) keep their own passwords. If you want to rotate those too, they each go through `/api/users/change-password` (already implemented).
-
----
-
-## 3. Strategic followups (low-priority)
-
-### Nits N2–N8 from audit §7
-
-| Nit | What | Effort |
-|---|---|---|
-| N2 | `evaluations.ts` references `EvaluationSummary` type before declaration | 5 min cosmetic |
-| N3 | (already gone with C2 cleanup) | — |
-| N4 | `Responden::_skd_clause` uses `addslashes` instead of CI3 escape | 5 min, swap for `$this->db->escape` |
-| N5 | `Dashboard::stats` rebuilds queries instead of one aggregate | 30 min performance opt |
-| N6 | `usePrint.ts` has no auto-retry on USB unplug | Acceptable — Reprint button exists |
-| N7 | Hardcoded service list in PHP — covered by FE-BE parity rule | Working as designed |
-| N8 | `print/server.js` allows `Access-Control-Allow-Origin: *` | Add `127.0.0.1` bind |
-
-### Future hardening (not in original audit)
-
-- **Apache IP allowlist on `/api/kiosk/*`** — proper fix for M4 (we did soft rate-limit). Requires you to enumerate kiosk PC IPs.
-- **`/api/kiosk/face-data` paging** — right now returns the entire `tamdes_buku` set every page-load. As the guest table grows, this gets expensive. Eventually should be `?since=<timestamp>` incremental + client-side merge.
-- **CI3 → modern framework migration** — CodeIgniter 3 EOL is approaching. Plan for Laravel/Symfony or a Node rewrite in next year's cycle.
-
----
-
-## State of the system as of this writing
-
-All Phase A fixes deployed live and pushed to `origin/main`:
-
-```
-6c8467d  docs(audit): mark M2 + M4 + M7 as fixed in findings status
-46f7a5c  feat(api): soft rate-limit for kiosk enumeration endpoints (mitigates M4)
-4fccce6  refactor(frontend): typed API clients for admin endpoints (closes M7)
-8d8624d  chore: delete legacy CI3 modules (closes audit C2 + M2)
-4aed38c  fix(api): surface FK / insert failures in Kiosk::register and Kiosk::visit
-6da0e7c  docs(audit): mark C3 + M1 as fixed in findings status table
-2b9d17d  feat(kiosk): signed continuation tokens for profile-update + eval submit
-2c2ebfd  chore: root .gitignore for *.backup files
-1564b9f  docs: comprehensive bukutamu audit + missing .env.example keys
-9a85ee4  feat(frontend): RequireRole component gates /admin/audit and /admin/users
-ff98258  feat(api): kiosk visit dedup + guests safety (LOCK + cascade-guard)
-632c95d  fix(api): role-gate /api/audit endpoint to admin+
-```
-
-Production endpoints sampled: all healthy.
-
-Frontend bundle: rebuilt and PM2-restarted with all M7 typed API clients live.
-
-Database: `bukutamu_app` MySQL user active with minimum grants; `tamdes_rate_limit` table created and exercised in smoke tests.
-
-Working tree clean, `main...origin/main` in sync.
+- **MySQL dedicated users created:** `bukutamu_app`, `agenda_work_app`, `opac_pst_app`, `toma_app`, `pds_app`, `sipentas_app` (6 total)
+- **PM2 services online and using new credentials:** all 15+ rotated processes ✅
+- **Production endpoints sampled:** healthy (bukutamu 200, agenda backend connected, opac backend connected, toma /docs 200, pds-backend online, sipentas listening)
+- **Leaked root password** (`17Agustus`): still valid for direct `mysql -uroot` access, but no longer bridges into 6 of the 9 production services. 3 services still use it; root rotation closes the final gap.
