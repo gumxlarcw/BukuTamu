@@ -1,9 +1,8 @@
-import type { ConsultationDataRow } from '@/types/visit'
 import {
-  LEVEL_DATA_OPTIONS,
-  PERIODE_DATA_OPTIONS,
   STATUS_DATA_OPTIONS,
   JENIS_PUBLIKASI_OPTIONS,
+  isPemerintahKategori,
+  type ConsultationDataRow,
 } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,30 +12,68 @@ import { Plus, Trash2 } from 'lucide-react'
 function emptyRow(): ConsultationDataRow {
   return {
     rincian_data: '',
+    // Field-field non-spec dipertahankan di payload supaya schema DB tidak break,
+    // tapi tidak di-render di UI.
     wilayah_data: '',
     tahun_awal: new Date().getFullYear(),
     tahun_akhir: new Date().getFullYear(),
     level_data: 1,
     periode_data: 4,
-    status_data: 4,
+    status_data: 4, // default "Belum Diperoleh"
     jenis_publikasi: null,
     judul_publikasi: null,
     tahun_publikasi: null,
     digunakan_nasional: null,
-    kualitas: null,
+    kualitas: null, // diisi tamu via tablet evaluasi nanti
   }
 }
 
 interface ConsultationDataFormProps {
   rows: ConsultationDataRow[]
   hasilKonsultasi: string
+  kategoriInstansi: number | string | null | undefined
   onChange: (rows: ConsultationDataRow[]) => void
   onHasilChange: (val: string) => void
+}
+
+interface PillRadioProps<T extends string | number> {
+  options: ReadonlyArray<{ value: T; label: string }>
+  value: T | null
+  onChange: (val: T) => void
+  columns?: number
+}
+
+function PillRadio<T extends string | number>({ options, value, onChange, columns = 2 }: PillRadioProps<T>) {
+  return (
+    <div
+      className="grid gap-2"
+      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+    >
+      {options.map(opt => {
+        const active = value === opt.value
+        return (
+          <button
+            key={String(opt.value)}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all active:scale-95 cursor-pointer text-left ${
+              active
+                ? 'bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-500/20'
+                : 'bg-background text-foreground border-border hover:bg-orange-50 hover:border-orange-300'
+            }`}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 export function ConsultationDataForm({
   rows,
   hasilKonsultasi,
+  kategoriInstansi,
   onChange,
   onHasilChange,
 }: ConsultationDataFormProps) {
@@ -53,14 +90,28 @@ export function ConsultationDataForm({
     onChange([...rows, emptyRow()])
   }
 
-  const showPublikasi = (status: number) => status === 1 || status === 2
+  const showSumberData = (status: number) => status === 1 || status === 2
+  const showDigunakanNasional = (status: number) =>
+    showSumberData(status) && isPemerintahKategori(kategoriInstansi)
+
+  const jenisPublikasiOptions = JENIS_PUBLIKASI_OPTIONS.map(name => ({ value: name, label: name }))
+  const digunakanNasionalOptions = [
+    { value: 1, label: 'Ya' },
+    { value: 0, label: 'Tidak' },
+  ] as const
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {rows.length === 0 && (
+        <p className="text-sm text-muted-foreground italic text-center py-4">
+          Belum ada data konsultasi. Klik "Tambah Data" untuk mulai mencatat kebutuhan tamu.
+        </p>
+      )}
+
       {rows.map((row, idx) => (
-        <div key={idx} className="border rounded-xl p-4 space-y-3 bg-muted/20">
+        <div key={idx} className="border rounded-xl p-4 space-y-4 bg-muted/20">
           <div className="flex items-center justify-between">
-            <p className="font-semibold text-sm">Data #{idx + 1}</p>
+            <p className="font-bold text-sm">No. {idx + 1}</p>
             <Button
               size="sm"
               variant="ghost"
@@ -71,149 +122,106 @@ export function ConsultationDataForm({
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Rincian Data</Label>
-              <Input
-                value={row.rincian_data}
-                onChange={e => updateRow(idx, { rincian_data: e.target.value })}
-                placeholder="Judul / rincian data yang diminta"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Wilayah Data</Label>
-              <Input
-                value={row.wilayah_data}
-                onChange={e => updateRow(idx, { wilayah_data: e.target.value })}
-                placeholder="Provinsi / Kab / Kota"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Tahun Awal</Label>
-              <Input
-                type="number"
-                value={row.tahun_awal}
-                onChange={e => updateRow(idx, { tahun_awal: Number(e.target.value) })}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Tahun Akhir</Label>
-              <Input
-                type="number"
-                value={row.tahun_akhir}
-                onChange={e => updateRow(idx, { tahun_akhir: Number(e.target.value) })}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Level Data</Label>
-              <select
-                value={row.level_data}
-                onChange={e => updateRow(idx, { level_data: Number(e.target.value) })}
-                className="w-full border rounded px-3 py-2 text-sm bg-background"
-              >
-                {LEVEL_DATA_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <Label>Periode Data</Label>
-              <select
-                value={row.periode_data}
-                onChange={e => updateRow(idx, { periode_data: Number(e.target.value) })}
-                className="w-full border rounded px-3 py-2 text-sm bg-background"
-              >
-                {PERIODE_DATA_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <Label>Status Data</Label>
-              <select
-                value={row.status_data}
-                onChange={e => updateRow(idx, { status_data: Number(e.target.value) })}
-                className="w-full border rounded px-3 py-2 text-sm bg-background"
-              >
-                {STATUS_DATA_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
+          {/* 2. Data yang dibutuhkan/dikonsultasikan */}
+          <div className="space-y-1">
+            <Label>Data yang dibutuhkan/dikonsultasikan <span className="text-red-500">*</span></Label>
+            <Input
+              value={row.rincian_data}
+              onChange={e => updateRow(idx, { rincian_data: e.target.value })}
+              placeholder="Contoh: Indeks Pembangunan Manusia Halmahera 2020-2024"
+            />
           </div>
 
-          {/* Conditional fields when status_data is 1 or 2 (Ya sesuai / Ya tidak sesuai) */}
-          {showPublikasi(row.status_data) && (
-            <div className="border-t pt-3 space-y-3">
+          {/* 3. Apakah data sudah diperoleh? */}
+          <div className="space-y-1.5">
+            <Label>Apakah data sudah diperoleh? <span className="text-red-500">*</span></Label>
+            <PillRadio
+              options={STATUS_DATA_OPTIONS}
+              value={row.status_data}
+              onChange={(val) => {
+                // Reset field 4-7 jika status berubah ke 3/4 (tidak/belum diperoleh)
+                if (val === 3 || val === 4) {
+                  updateRow(idx, {
+                    status_data: val,
+                    jenis_publikasi: null,
+                    judul_publikasi: null,
+                    tahun_publikasi: null,
+                    digunakan_nasional: null,
+                  })
+                } else {
+                  updateRow(idx, { status_data: val })
+                }
+              }}
+              columns={2}
+            />
+          </div>
+
+          {/* 4-6. Hanya muncul kalau data sudah diperoleh (status 1 atau 2) */}
+          {showSumberData(row.status_data) && (
+            <div className="border-t pt-4 space-y-4">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Detail Publikasi
+                Detail Sumber Data
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label>Jenis Publikasi</Label>
-                  <select
-                    value={row.jenis_publikasi ?? ''}
-                    onChange={e => updateRow(idx, { jenis_publikasi: e.target.value || null })}
-                    className="w-full border rounded px-3 py-2 text-sm bg-background"
-                  >
-                    <option value="">-- Pilih --</option>
-                    {JENIS_PUBLIKASI_OPTIONS.map(o => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label>Tahun Publikasi</Label>
-                  <Input
-                    type="number"
-                    value={row.tahun_publikasi ?? ''}
-                    onChange={e =>
-                      updateRow(idx, {
-                        tahun_publikasi: e.target.value ? Number(e.target.value) : null,
-                      })
-                    }
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label>Judul Publikasi</Label>
-                  <Input
-                    value={row.judul_publikasi ?? ''}
-                    onChange={e => updateRow(idx, { judul_publikasi: e.target.value || null })}
-                    placeholder="Judul publikasi"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Digunakan Nasional</Label>
-                  <select
-                    value={row.digunakan_nasional ?? ''}
-                    onChange={e =>
-                      updateRow(idx, {
-                        digunakan_nasional: e.target.value ? Number(e.target.value) : null,
-                      })
-                    }
-                    className="w-full border rounded px-3 py-2 text-sm bg-background"
-                  >
-                    <option value="">-- Pilih --</option>
-                    <option value="1">Ya</option>
-                    <option value="0">Tidak</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label>Kualitas (1-10)</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={row.kualitas ?? ''}
-                    onChange={e =>
-                      updateRow(idx, {
-                        kualitas: e.target.value ? Number(e.target.value) : null,
-                      })
-                    }
-                  />
-                </div>
+
+              {/* 4. Jenis Sumber Data */}
+              <div className="space-y-1.5">
+                <Label>Jenis Sumber Data <span className="text-red-500">*</span></Label>
+                <PillRadio
+                  options={jenisPublikasiOptions}
+                  value={row.jenis_publikasi}
+                  onChange={val => updateRow(idx, { jenis_publikasi: val })}
+                  columns={2}
+                />
               </div>
+
+              {/* 5. Judul Sumber Data */}
+              <div className="space-y-1">
+                <Label>Judul Sumber Data <span className="text-muted-foreground text-xs font-normal">(isikan sesuai responden)</span></Label>
+                <Input
+                  value={row.judul_publikasi ?? ''}
+                  onChange={e => updateRow(idx, { judul_publikasi: e.target.value || null })}
+                  placeholder="Judul publikasi/sumber data"
+                />
+              </div>
+
+              {/* 6. Tahun Sumber Data */}
+              <div className="space-y-1 max-w-[200px]">
+                <Label>Tahun Sumber Data</Label>
+                <Input
+                  type="number"
+                  min={2000}
+                  max={new Date().getFullYear()}
+                  value={row.tahun_publikasi ?? ''}
+                  onChange={e =>
+                    updateRow(idx, {
+                      tahun_publikasi: e.target.value ? Number(e.target.value) : null,
+                    })
+                  }
+                />
+              </div>
+
+              {/* 7. Digunakan untuk perencanaan/evaluasi (hanya pemerintah) */}
+              {showDigunakanNasional(row.status_data) && (
+                <div className="space-y-1.5">
+                  <Label>
+                    Apakah data ini digunakan untuk perencanaan dan evaluasi pembangunan nasional/daerah?
+                  </Label>
+                  <PillRadio
+                    options={digunakanNasionalOptions}
+                    value={row.digunakan_nasional}
+                    onChange={val => updateRow(idx, { digunakan_nasional: val })}
+                    columns={2}
+                  />
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Info kalau status 3/4: Tingkat Kepuasan Kualitas akan di-skip */}
+          {(row.status_data === 1 || row.status_data === 2) && (
+            <p className="text-[11px] text-muted-foreground italic border-t pt-2">
+              ℹ️ Tingkat kepuasan kualitas data akan ditanyakan ke tamu di tablet evaluasi.
+            </p>
           )}
         </div>
       ))}
@@ -236,7 +244,7 @@ export function ConsultationDataForm({
           id="hasil_konsultasi"
           rows={4}
           className="w-full border rounded-md px-3 py-2 text-sm bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-          placeholder="Catatan hasil konsultasi..."
+          placeholder="Catatan ringkas hasil konsultasi (opsional)..."
           value={hasilKonsultasi}
           onChange={e => onHasilChange(e.target.value)}
         />

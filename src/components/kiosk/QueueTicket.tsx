@@ -1,4 +1,5 @@
 import { Printer, Clock, User, LayoutGrid } from 'lucide-react'
+import { useEffect, useState, useRef } from 'react'
 import type { TicketData } from '@/api/kiosk'
 
 interface QueueTicketProps {
@@ -23,50 +24,95 @@ function formatDateTime(iso: string): string {
   }
 }
 
+function CountUpText({ text }: { text: string }) {
+  const [display, setDisplay] = useState('')
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  const started = useRef(false)
+
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    let step = 0
+    const interval = setInterval(() => {
+      setDisplay(
+        text
+          .split('')
+          .map((ch, i) => (i <= step ? ch : chars[Math.floor(Math.random() * chars.length)]))
+          .join(''),
+      )
+      step++
+      if (step >= text.length) clearInterval(interval)
+    }, 60)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text])
+
+  return <>{display || text}</>
+}
+
 export function QueueTicket({ ticket, onPrint, isPrinting }: QueueTicketProps) {
   return (
-    <div className="bg-white/95 text-gray-800 rounded-3xl shadow-2xl p-8 max-w-md w-full text-center">
+    <div className="ticket-entrance bg-white/95 text-gray-800 rounded-2xl shadow-2xl px-6 py-4 max-w-sm w-full text-center overflow-hidden">
+      <style>{`
+        .ticket-entrance {
+          animation: ticketPop 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes ticketPop {
+          from { opacity: 0; transform: scale(0.9) translateY(20px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .queue-number-glow {
+          animation: numberGlow 2s ease-in-out infinite alternate;
+        }
+        @keyframes numberGlow {
+          from { box-shadow: 0 0 20px rgba(249, 115, 22, 0.15); }
+          to { box-shadow: 0 0 40px rgba(249, 115, 22, 0.3); }
+        }
+      `}</style>
+
       {/* Header */}
-      <div className="mb-6">
-        <p className="text-teal-600 font-semibold text-sm uppercase tracking-widest mb-1">
+      <div className="mb-2">
+        <p className="text-orange-600 font-semibold text-xs uppercase tracking-widest mb-0.5">
           Tiket Antrian
         </p>
-        <h2 className="text-2xl font-bold text-gray-900">Pelayanan Statistik Terpadu</h2>
+        <h2 className="text-lg font-bold text-gray-900">BPS Provinsi Maluku Utara</h2>
       </div>
 
       {/* Queue number */}
-      <div className="bg-teal-50 border-2 border-teal-200 rounded-2xl py-6 px-4 mb-6">
-        <p className="text-teal-600 text-sm font-semibold mb-2">Nomor Antrian</p>
+      <div className="queue-number-glow bg-orange-50 border-2 border-orange-200 rounded-xl py-3 px-4 mb-3">
+        <p className="text-orange-600 text-xs font-semibold mb-1">Nomor Antrian</p>
         {ticket.nomor_antrian ? (
-          <p className="text-7xl font-black text-teal-600 leading-none">{ticket.nomor_antrian}</p>
+          <p className="text-5xl font-black text-orange-600 leading-none">
+            <CountUpText text={ticket.nomor_antrian} />
+          </p>
         ) : (
-          <p className="text-2xl font-bold text-gray-500 italic">Langsung Dilayani</p>
+          <p className="text-lg font-bold text-gray-500 italic">Langsung Dilayani</p>
         )}
       </div>
 
-      {/* Details */}
-      <div className="space-y-4 text-left">
-        <div className="flex items-start gap-3">
-          <User className="w-5 h-5 text-teal-500 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-xs text-gray-500 font-medium uppercase">Nama</p>
-            <p className="font-semibold text-gray-800">{ticket.nama}</p>
+      {/* Details — horizontal layout */}
+      <div className="flex gap-3 text-left mb-3">
+        <div className="flex items-start gap-1.5 flex-1 min-w-0">
+          <User className="w-3.5 h-3.5 text-orange-500 mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[10px] text-gray-500 font-medium uppercase">Nama</p>
+            <p className="font-semibold text-gray-800 text-xs break-words leading-snug">{ticket.nama}</p>
           </div>
         </div>
 
-        <div className="flex items-start gap-3">
-          <LayoutGrid className="w-5 h-5 text-teal-500 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-xs text-gray-500 font-medium uppercase">Layanan</p>
-            <p className="font-semibold text-gray-800">{ticket.jenis_layanan}</p>
+        <div className="flex items-start gap-1.5 flex-1 min-w-0">
+          <LayoutGrid className="w-3.5 h-3.5 text-orange-500 mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[10px] text-gray-500 font-medium uppercase">Layanan</p>
+            <p className="font-semibold text-gray-800 text-xs break-words leading-snug">{ticket.jenis_layanan}</p>
           </div>
         </div>
 
-        <div className="flex items-start gap-3">
-          <Clock className="w-5 h-5 text-teal-500 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-xs text-gray-500 font-medium uppercase">Waktu</p>
-            <p className="font-semibold text-gray-800 text-sm">{formatDateTime(ticket.date_visit)}</p>
+        <div className="flex items-start gap-1.5 flex-1 min-w-0">
+          <Clock className="w-3.5 h-3.5 text-orange-500 mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[10px] text-gray-500 font-medium uppercase">Waktu</p>
+            <p className="font-semibold text-gray-800 text-[10px] break-words leading-snug">{formatDateTime(ticket.date_visit)}</p>
           </div>
         </div>
       </div>
@@ -76,9 +122,9 @@ export function QueueTicket({ ticket, onPrint, isPrinting }: QueueTicketProps) {
         <button
           onClick={onPrint}
           disabled={isPrinting}
-          className="mt-6 flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-teal-500 text-teal-600 font-semibold hover:bg-teal-50 active:bg-teal-100 transition-all disabled:opacity-50"
+          className="flex items-center justify-center gap-2 w-full py-2 rounded-xl border-2 border-orange-500 text-orange-600 font-semibold text-sm hover:bg-orange-50 active:bg-orange-100 transition-all disabled:opacity-50"
         >
-          <Printer className="w-5 h-5" />
+          <Printer className="w-4 h-4" />
           {isPrinting ? 'Mencetak...' : 'Cetak Ulang'}
         </button>
       )}

@@ -20,7 +20,7 @@ export function useInactivityTimeout(
   }, [timeoutMs])
 
   useEffect(() => {
-    const events = ['mousedown', 'touchstart', 'keydown', 'scroll'] as const
+    const events = ['mousedown', 'touchstart', 'touchmove', 'touchend', 'keydown', 'scroll'] as const
     const handler = () => resetTimer()
 
     events.forEach(evt => window.addEventListener(evt, handler, { passive: true }))

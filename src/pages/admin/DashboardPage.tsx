@@ -8,11 +8,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Users, User, CalendarDays, BarChart3, Flame, Calendar, CheckCircle, Hourglass, TrendingUp, Timer, Trophy, Building2 } from 'lucide-react'
 
 function StatsSkeleton() {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 gap-3">
       {Array.from({ length: 12 }).map((_, i) => (
         <Skeleton key={i} className="h-20 rounded-xl" />
       ))}
@@ -50,79 +50,61 @@ export default function DashboardPage() {
 
   const statsItems = stats
     ? [
-        { label: 'Total Kunjungan', value: stats.total_kunjungan, icon: '👥' },
-        { label: 'Tamu Unik', value: stats.tamu_unik, icon: '🧑' },
-        { label: 'Jumlah Hari', value: stats.jumlah_hari, icon: '📅' },
-        { label: 'Rata-rata/Hari', value: stats.rata_rata_per_hari, icon: '📊' },
-        { label: 'Hari Tersibuk', value: stats.hari_tersibuk, icon: '🔥' },
-        { label: 'Periode Aktif', value: stats.periode_aktif, icon: '📆' },
-        { label: 'Selesai', value: stats.selesai, icon: '✅' },
-        { label: 'Antri', value: stats.antri, icon: '⏳' },
-        { label: 'Tingkat Selesai', value: `${stats.tingkat_selesai}%`, icon: '📈' },
-        { label: 'Rata-rata Durasi', value: stats.rata_rata_durasi, icon: '⏱️' },
-        { label: 'Layanan Terbanyak', value: stats.layanan_terbanyak, icon: '🏆' },
-        { label: 'Instansi Terbanyak', value: stats.instansi_terbanyak, icon: '🏢' },
+        { label: 'Total Kunjungan', value: stats.total_kunjungan, icon: <Users className="w-5 h-5" /> },
+        { label: 'Tamu Unik', value: stats.tamu_unik, icon: <User className="w-5 h-5" /> },
+        { label: 'Jumlah Hari', value: stats.jumlah_hari, icon: <CalendarDays className="w-5 h-5" /> },
+        { label: 'Rata-rata/Hari', value: stats.rata_rata_per_hari, icon: <BarChart3 className="w-5 h-5" /> },
+        { label: 'Hari Tersibuk', value: stats.hari_tersibuk, icon: <Flame className="w-5 h-5" /> },
+        { label: 'Periode Aktif', value: stats.periode_aktif, icon: <Calendar className="w-5 h-5" /> },
+        { label: 'Selesai', value: stats.selesai, icon: <CheckCircle className="w-5 h-5" /> },
+        { label: 'Antri', value: stats.antri, icon: <Hourglass className="w-5 h-5" /> },
+        { label: 'Tingkat Selesai', value: `${stats.tingkat_selesai}%`, icon: <TrendingUp className="w-5 h-5" /> },
+        { label: 'Rata-rata Durasi', value: stats.rata_rata_durasi, icon: <Timer className="w-5 h-5" /> },
+        { label: 'Layanan Terbanyak', value: stats.layanan_terbanyak, icon: <Trophy className="w-5 h-5" /> },
+        { label: 'Instansi Terbanyak', value: stats.instansi_terbanyak, icon: <Building2 className="w-5 h-5" /> },
       ]
     : []
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground text-sm mt-1">Statistik Pelayanan Statistik Terpadu</p>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="admin-h1">Dashboard</h1>
+          <p className="admin-subtitle">Ringkasan Data BPS Provinsi Maluku Utara</p>
+        </div>
+        {/* Date filter — compact inline */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="date_from">Dari</Label>
+            <Input id="date_from" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36 h-9" />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="date_to">Sampai</Label>
+            <Input id="date_to" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36 h-9" />
+          </div>
+          <Button size="sm" onClick={handleFilter} className="bg-orange-600 hover:bg-orange-700 text-white">Filter</Button>
+          <Button size="sm" variant="outline" onClick={handleReset}>Reset</Button>
+        </div>
       </div>
 
-      {/* Date filter */}
-      <Card>
-        <CardContent className="py-4">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1">
-              <Label htmlFor="date_from">Dari Tanggal</Label>
-              <Input
-                id="date_from"
-                type="date"
-                value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
-                className="w-44"
-              />
+      {/* Two-column: stats left, calendar right */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,480px)_1fr] gap-5">
+        {/* Left — Stats cards */}
+        <div>
+          {statsLoading ? (
+            <StatsSkeleton />
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {statsItems.map((item, i) => (
+                <StatsCard key={item.label} label={item.label} value={item.value} icon={item.icon} accent={i >= 6 ? 'secondary' : 'primary'} />
+              ))}
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="date_to">Sampai Tanggal</Label>
-              <Input
-                id="date_to"
-                type="date"
-                value={dateTo}
-                onChange={e => setDateTo(e.target.value)}
-                className="w-44"
-              />
-            </div>
-            <Button onClick={handleFilter} className="bg-teal-600 hover:bg-teal-700 text-white">
-              Filter
-            </Button>
-            <Button variant="outline" onClick={handleReset}>
-              Reset
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Stats grid */}
-      {statsLoading ? (
-        <StatsSkeleton />
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {statsItems.map((item) => (
-            <StatsCard key={item.label} label={item.label} value={item.value} icon={item.icon} />
-          ))}
+          )}
         </div>
-      )}
 
-      {/* Calendar */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Kalender Kunjungan</CardTitle>
-        </CardHeader>
-        <CardContent>
+        {/* Right — Calendar */}
+        <div className="admin-card p-5">
+          <h2 className="text-sm font-bold mb-3 text-[--admin-text]">Kalender Kunjungan</h2>
           {eventsLoading ? (
             <Skeleton className="h-64 rounded-xl" />
           ) : (
@@ -134,13 +116,13 @@ export default function DashboardPage() {
               headerToolbar={{
                 left: 'prev,next today',
                 center: 'title',
-                right: 'dayGridMonth,dayGridWeek',
+                right: '',
               }}
               height="auto"
             />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

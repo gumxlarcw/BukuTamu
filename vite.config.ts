@@ -5,6 +5,12 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    modulePreload: { polyfill: false },
+  },
+  html: {
+    cspNonce: undefined,
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

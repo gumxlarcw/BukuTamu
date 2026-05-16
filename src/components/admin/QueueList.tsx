@@ -32,11 +32,11 @@ export function QueueList({ visits, renderActions }: QueueListProps) {
       {visits.map(visit => (
         <div
           key={visit.id_kunjungan}
-          className="flex items-center gap-4 p-4 rounded-xl border bg-card"
+          className="admin-card flex items-center gap-4 p-4"
         >
           {/* Queue number */}
-          <div className="w-14 h-14 rounded-full bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center shrink-0">
-            <span className="text-teal-700 dark:text-teal-300 font-bold text-lg">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--admin-primary-light)' }}>
+            <span className="font-bold text-lg" style={{ color: 'var(--admin-primary)' }}>
               {visit.nomor_antrian ?? '-'}
             </span>
           </div>

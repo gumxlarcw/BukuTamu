@@ -1,10 +1,17 @@
 import apiClient from './client'
 import type { ApiResponse } from '@/types/api'
-import type { EvaluationIndicator, EvaluationSubmission, EvaluationResult } from '@/types/evaluation'
+import type {
+  EvaluationIndicator,
+  EvaluationSubmission,
+  EvaluationResult,
+  EvaluationFormData,
+  KonsultasiKualitas,
+} from '@/types/evaluation'
 
 interface EvaluationFormBackendShape {
   indikator: Record<string, string>
   evaluation: unknown[]
+  konsultasi_kualitas: KonsultasiKualitas[]
 }
 
 export const evaluationsApi = {
@@ -17,12 +24,20 @@ export const evaluationsApi = {
       label,
       satisfaction: 0,
     }))
-    return { ...r, data: { ...r.data, data: indicators } }
+    const konsultasiKualitas: KonsultasiKualitas[] = (r.data.data?.konsultasi_kualitas ?? []).map(k => ({
+      id: Number(k.id),
+      rincian_data: k.rincian_data ?? '',
+      status_data: Number(k.status_data),
+      kualitas: k.kualitas !== null && k.kualitas !== undefined ? Number(k.kualitas) : null,
+    }))
+    const formData: EvaluationFormData = { indicators, konsultasiKualitas }
+    return { ...r, data: { ...r.data, data: formData } }
   },
   submit: (id: number, data: EvaluationSubmission) => {
     const payload = {
       skor_keseluruhan: data.overall_score,
       kepuasan: Object.fromEntries(data.indicators.map(i => [i.id, i.satisfaction])),
+      kualitas_per_konsultasi: data.kualitas_per_konsultasi ?? {},
     }
     return apiClient.post<ApiResponse<null>>(`/api/evaluations/${id}`, payload)
   },

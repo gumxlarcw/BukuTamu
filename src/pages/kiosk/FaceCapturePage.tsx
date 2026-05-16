@@ -14,7 +14,10 @@ export default function FaceCapturePage() {
   const location = useLocation()
 
   const formData: GuestFormData = location.state?.formData
-  const jenis_layanan: string = location.state?.jenis_layanan ?? ''
+  const jenis_layanan: string[] = location.state?.jenis_layanan ?? []
+  const layanan_lainnya: string = location.state?.layanan_lainnya ?? ''
+  const sarana: number[] = location.state?.sarana ?? []
+  const sarana_lainnya: string = location.state?.sarana_lainnya ?? ''
 
   const [consentAccepted, setConsentAccepted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -28,9 +31,12 @@ export default function FaceCapturePage() {
         foto: payload.photo,
         face_descriptor: payload.descriptor ? Array.from(payload.descriptor) : [],
         jenis_layanan,
+        layanan_lainnya,
+        sarana,
+        sarana_lainnya,
         biometric_consent: true,
         consent_timestamp: new Date().toISOString(),
-      } as Parameters<typeof kioskApi.register>[0]),
+      }),
     onSuccess: (res) => {
       localStorage.removeItem(STORAGE_KEY)
       const visitId = res.data.data.id_kunjungan
@@ -42,7 +48,7 @@ export default function FaceCapturePage() {
   })
 
   const handleDecline = () => {
-    navigate('/kiosk/form', { state: { formData, jenis_layanan } })
+    navigate('/kiosk/form', { state: { formData, jenis_layanan, layanan_lainnya, sarana, sarana_lainnya } })
   }
 
   const handlePhotoConfirm = (photo: string, descriptor: Float32Array | null) => {
@@ -52,11 +58,11 @@ export default function FaceCapturePage() {
 
   if (!formData) {
     return (
-      <div className="text-white text-center">
+      <div className="text-gray-800 text-center">
         <p className="text-xl mb-4">Data tidak ditemukan</p>
         <button
           onClick={() => navigate('/kiosk')}
-          className="px-8 py-4 bg-teal-500 rounded-xl text-white font-bold"
+          className="px-8 py-4 bg-orange-500 rounded-xl text-white font-bold"
         >
           Mulai Ulang
         </button>
@@ -74,23 +80,23 @@ export default function FaceCapturePage() {
         />
       )}
 
-      <div className="flex flex-col items-center text-white px-4 max-w-2xl w-full mx-auto">
-        <h1 className="text-3xl font-bold mb-2 drop-shadow-lg">Verifikasi Wajah</h1>
-        <p className="text-white/80 mb-8 text-center">
+      <div className="flex flex-col items-center text-gray-800 px-4 max-w-2xl w-full mx-auto">
+        <h1 className="text-xl font-bold mb-1">Verifikasi Wajah</h1>
+        <p className="text-gray-500 mb-3 text-center text-xs">
           Ambil foto wajah Anda untuk menyelesaikan pendaftaran
         </p>
 
         {registerMutation.isPending ? (
           <div className="flex flex-col items-center gap-4">
             <LoadingSpinner />
-            <p className="text-white/80 text-lg">Mendaftarkan pengunjung...</p>
+            <p className="text-gray-500 text-lg">Mendaftarkan pengunjung...</p>
           </div>
         ) : (
           <>
             {consentAccepted && <FaceCapture onConfirm={handlePhotoConfirm} />}
 
             {submitError && (
-              <div className="mt-6 p-4 rounded-xl bg-red-500/20 border border-red-400/40 text-red-200 text-center">
+              <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-center text-sm overflow-hidden">
                 {submitError}
               </div>
             )}
@@ -98,8 +104,8 @@ export default function FaceCapturePage() {
         )}
 
         <button
-          onClick={() => navigate('/kiosk/form', { state: { formData, jenis_layanan } })}
-          className="mt-8 px-8 py-3 text-white/70 hover:text-white underline text-lg transition-colors"
+          onClick={() => navigate('/kiosk/form', { state: { formData, jenis_layanan, layanan_lainnya, sarana, sarana_lainnya } })}
+          className="mt-4 px-6 py-2 text-gray-500 hover:text-gray-800 underline text-base transition-colors"
           disabled={registerMutation.isPending}
         >
           Kembali

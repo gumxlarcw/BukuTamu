@@ -1,45 +1,262 @@
 import { useNavigate } from 'react-router-dom'
 import { useInactivityTimeout } from '@/hooks/useInactivityTimeout'
+import { useEffect, useState, useMemo } from 'react'
+import VideoSlideshow from '@/components/kiosk/VideoSlideshow'
+
+// ─── Official SE2026 taglines from BPS ───
+const SE_TAGLINES = [
+  'Untuk Kesejahteraan Kita, Untuk Indonesia',
+  'Data Anda adalah kekuatan ekonomi bangsa',
+  'Mencatat seluruh usaha dan perusahaan di Indonesia',
+  'Fondasi penting bagi perumusan kebijakan ekonomi nasional',
+  'Dukung pembangunan ekonomi daerah melalui data yang akurat',
+  '#SE2026 #MencatatIndonesia #DataMencerdaskanBangsa',
+]
+
+// ─── SE2026 period: 1 May – 31 August 2026 ───
+const SE_START = new Date('2026-05-01T00:00:00+0800')
+const SE_END = new Date('2026-08-31T23:59:59+0800')
+
+function useCountdown() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  if (now >= SE_END) return { status: 'ended' as const, days: 0, hours: 0, minutes: 0, seconds: 0 }
+  if (now >= SE_START) {
+    const diff = SE_END.getTime() - now.getTime()
+    return { status: 'active' as const, days: Math.floor(diff / 86400000), hours: Math.floor((diff % 86400000) / 3600000), minutes: Math.floor((diff % 3600000) / 60000), seconds: Math.floor((diff % 60000) / 1000) }
+  }
+  const diff = SE_START.getTime() - now.getTime()
+  return { status: 'upcoming' as const, days: Math.floor(diff / 86400000), hours: Math.floor((diff % 86400000) / 3600000), minutes: Math.floor((diff % 3600000) / 60000), seconds: Math.floor((diff % 60000) / 1000) }
+}
+
+function useTaglineRotation(interval = 5000) {
+  const [index, setIndex] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setIndex(i => (i + 1) % SE_TAGLINES.length), interval)
+    return () => clearInterval(id)
+  }, [interval])
+  return index
+}
 
 export default function WelcomePage() {
   const navigate = useNavigate()
+  const [mounted, setMounted] = useState(false)
+  const countdown = useCountdown()
+  const taglineIdx = useTaglineRotation()
 
   useInactivityTimeout(() => navigate('/kiosk'), 120000)
 
+  const [hintReady, setHintReady] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 100)
+    // Hint pulse starts after w-fade entrance completes (850ms delay + 700ms transition)
+    const h = setTimeout(() => setHintReady(true), 1650)
+    return () => { clearTimeout(t); clearTimeout(h) }
+  }, [])
+
+  const countdownLabel = useMemo(() => {
+    if (countdown.status === 'ended') return 'Sensus Ekonomi 2026 telah berakhir'
+    if (countdown.status === 'active') return 'Sedang berlangsung!'
+    return 'Akan dimulai dalam'
+  }, [countdown.status])
+
   return (
-    <div className="flex flex-col items-center justify-center text-center text-white px-8 max-w-3xl mx-auto">
-      <div className="mb-8">
-        <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-teal-500/30 flex items-center justify-center border-4 border-teal-400">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            className="w-12 h-12 text-teal-300"
-          >
-            <path d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .707A8.237 8.237 0 016 18.75c1.995 0 3.823.707 5.25 1.886V4.533zM12.75 20.636A8.214 8.214 0 0118 18.75c.966 0 1.89.166 2.75.47a.75.75 0 001-.708V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v16.103z" />
-          </svg>
+    <>
+      <style>{`
+        .w-fade { opacity:0; transform:translateY(16px); transition:all 0.7s cubic-bezier(0.16,1,0.3,1); }
+        .w-fade.show { opacity:1; transform:translateY(0); }
+
+        /* ── Brand strip ── */
+        .brand-strip {
+          padding: 20px 24px;
+          position: relative;
+        }
+        .brand-strip::after {
+          content: '';
+          position: absolute;
+          right: 0;
+          top: 15%;
+          bottom: 15%;
+          width: 1px;
+          background: linear-gradient(to bottom, transparent, rgba(42,32,22,0.06), transparent);
+        }
+        @media (max-width: 1023px) {
+          .brand-strip::after { display: none; }
+        }
+
+        .divider-glow {
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(249,115,22,0.5), transparent);
+          width: 0;
+          transition: width 0.8s cubic-bezier(0.16,1,0.3,1);
+        }
+        .divider-glow.show { width: 60px; }
+
+        .cta-btn {
+          position: relative; overflow: hidden;
+          opacity:0; transform:translateY(16px);
+          transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.16,1,0.3,1);
+        }
+        .cta-btn.show { opacity:1; transform:translateY(0); }
+        .cta-btn::before {
+          content:''; position:absolute; inset:-2px; border-radius:16px;
+          background:linear-gradient(135deg,rgba(249,115,22,0.3),rgba(245,166,35,0.2),rgba(249,115,22,0.3));
+          z-index:-1; animation:btnGlow 3s ease-in-out infinite alternate;
+        }
+        @keyframes btnGlow { 0%{opacity:0.4;filter:blur(8px)} 100%{opacity:0.7;filter:blur(10px)} }
+        .cta-btn .shimmer {
+          position:absolute; top:0; left:-100%; width:100%; height:100%;
+          background:linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent);
+          animation:shimmer 4s ease-in-out infinite;
+        }
+        @keyframes shimmer { 0%,100%{left:-100%} 50%{left:100%} }
+
+        .hint-pulse { animation:none; }
+        .hint-pulse.active { animation:hintPulse 3s ease-in-out infinite; }
+        @keyframes hintPulse { 0%,100%{opacity:0.35} 50%{opacity:0.6} }
+
+        /* ── Promo column ── */
+        .promo-card {
+          border-radius: 16px;
+          overflow: hidden;
+          border: 1px solid rgba(42,32,22,0.08);
+          box-shadow: 0 8px 32px rgba(42,32,22,0.08);
+        }
+        .tagline-fade-enter { animation: tagFadeIn 0.6s ease-out; }
+        @keyframes tagFadeIn { from{opacity:0;filter:blur(6px);transform:translateY(6px)} to{opacity:1;filter:blur(0);transform:translateY(0)} }
+
+        /* ── Countdown ── */
+        .cd-row { display:flex; align-items:flex-start; justify-content:center; gap:2px; }
+        .cd-unit { display:flex; flex-direction:column; align-items:center; min-width:48px; }
+        .cd-unit .val { font-size:24px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; }
+        .cd-unit .lbl { font-size:9px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; margin-top:3px; opacity:0.5; }
+        .cd-sep { font-size:18px; font-weight:700; opacity:0.25; padding:0 1px; line-height:1; margin-top:2px; }
+      `}</style>
+
+      <div className="relative flex items-center justify-center text-gray-800 w-full select-none">
+
+        {/* ═══ Asymmetric layout: 35% brand | 65% promo ═══ */}
+        <div className="relative z-10 flex flex-col lg:flex-row items-stretch w-full gap-0">
+
+          {/* ── LEFT: Brand strip (38%) ── */}
+          <div className="brand-strip w-full lg:w-[32%] shrink-0 flex flex-col items-center justify-center text-center">
+
+            {/* Logos stacked */}
+            <div className={`w-fade flex items-center justify-center gap-3 mb-3 ${mounted ? 'show' : ''}`}>
+              <img src="/logo-bps.png" alt="Logo BPS" className="h-12 w-auto object-contain drop-shadow-lg" onError={e => { e.currentTarget.style.display = 'none' }} />
+              <div className="h-8 w-px bg-gray-300" />
+              <img src="/logo-se2026.png?v=2" alt="Logo SE2026" className="h-11 w-auto object-contain drop-shadow-lg" onError={e => { e.currentTarget.style.display = 'none' }} />
+            </div>
+
+            {/* Title */}
+            <p className={`w-fade text-xs font-medium tracking-[0.2em] uppercase text-orange-500/70 mb-2 ${mounted ? 'show' : ''}`} style={{ transitionDelay: '150ms' }}>
+              Selamat Datang di
+            </p>
+            <h1 className={`w-fade text-2xl lg:text-3xl font-extrabold leading-tight tracking-tight text-gray-800 mb-1 ${mounted ? 'show' : ''}`} style={{ transitionDelay: '300ms', margin: 0 }}>
+              BPS Provinsi
+            </h1>
+            <h1 className={`w-fade text-2xl lg:text-3xl font-extrabold leading-tight tracking-tight mb-0 ${mounted ? 'show' : ''}`} style={{ transitionDelay: '400ms', margin: 0 }}>
+              <span className="bg-gradient-to-r from-orange-600 via-amber-600 to-orange-500 bg-clip-text text-transparent">Maluku Utara</span>
+            </h1>
+
+            {/* Divider */}
+            <div className={`divider-glow mx-auto my-3 ${mounted ? 'show' : ''}`} style={{ transitionDelay: '500ms' }} />
+
+            {/* Countdown */}
+            <div className={`w-fade mb-3 ${mounted ? 'show' : ''}`} style={{ transitionDelay: '550ms' }}>
+              <p className="text-[11px] font-bold text-orange-600/80 uppercase tracking-[0.1em] mb-1">
+                Sensus Ekonomi 2026
+              </p>
+              <p className="text-[10px] text-gray-500 leading-relaxed mb-2 max-w-[220px] mx-auto">
+                Pendataan seluruh usaha & perusahaan non-pertanian di Indonesia
+              </p>
+              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.1em] mb-2">
+                {countdownLabel}
+              </p>
+              {countdown.status !== 'ended' && (
+                <div className="cd-row">
+                  <CdUnit value={countdown.days} label="Hari" color={countdown.status === 'active' ? 'text-amber-600' : 'text-orange-600'} />
+                  <span className="cd-sep">:</span>
+                  <CdUnit value={countdown.hours} label="Jam" color={countdown.status === 'active' ? 'text-amber-600' : 'text-orange-600'} />
+                  <span className="cd-sep">:</span>
+                  <CdUnit value={countdown.minutes} label="Menit" color={countdown.status === 'active' ? 'text-amber-600' : 'text-orange-600'} />
+                  <span className="cd-sep">:</span>
+                  <CdUnit value={countdown.seconds} label="Detik" color={countdown.status === 'active' ? 'text-amber-600' : 'text-orange-600'} />
+                </div>
+              )}
+              <p className="text-[11px] font-medium text-gray-400 mt-2">
+                1 Mei – 31 Agustus 2026
+              </p>
+              {countdown.status === 'active' && (
+                <div className="flex items-center justify-center gap-1.5 mt-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-green-600 text-[11px] font-semibold">Sedang berlangsung</span>
+                </div>
+              )}
+            </div>
+
+            {/* CTA */}
+            <button
+              onClick={() => navigate('/kiosk/service')}
+              className={`cta-btn w-full max-w-[220px] py-3 text-sm font-bold rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 active:from-orange-600 active:to-amber-600 text-white shadow-xl shadow-orange-500/20 transition-colors duration-200 active:scale-95 cursor-pointer ${mounted ? 'show' : ''}`}
+              style={{ transitionDelay: '650ms' }}
+            >
+              <span className="shimmer" />
+              <span className="relative z-10 flex items-center justify-center gap-2">
+                Isi Buku Tamu
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </span>
+            </button>
+
+            <p className={`w-fade text-xs text-gray-400 mt-2 font-medium tracking-wide ${mounted ? 'show' : ''} hint-pulse ${hintReady ? 'active' : ''}`} style={{ transitionDelay: '850ms' }}>
+              Klik atau sentuh untuk mengisi buku tamu
+            </p>
+          </div>
+
+          {/* ── RIGHT: Promo column (62%) ── */}
+          <div className={`w-fade w-full lg:w-[68%] flex flex-col items-center justify-center py-4 lg:px-6 ${mounted ? 'show' : ''}`} style={{ transitionDelay: '500ms' }}>
+
+            {/* Video + Tagline */}
+            <div className="promo-card w-full">
+              <VideoSlideshow />
+
+              {/* White tagline area */}
+              <div style={{ background: '#fff', borderRadius: '0 0 20px 20px', padding: '10px 16px' }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <img src="/logo-se2026.png?v=2" alt="" className="h-3.5 w-auto shrink-0" onError={e => { e.currentTarget.style.display = 'none' }} />
+                  <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#c4570a' }}>Sensus Ekonomi 2026</span>
+                </div>
+                <p style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.4, color: '#2a2016' }} className="tagline-fade-enter" key={taglineIdx}>
+                  {SE_TAGLINES[taglineIdx]}
+                </p>
+              </div>
+            </div>
+
+            {/* Hashtags */}
+            <div className="flex items-center justify-center gap-3 mt-3">
+              {['#SE2026', '#MencatatIndonesia', '#DataMencerdaskanBangsa'].map(tag => (
+                <span key={tag} className="text-[10px] font-semibold text-orange-500/50 tracking-wide">{tag}</span>
+              ))}
+            </div>
+
+          </div>
+
         </div>
-        <h1 className="text-4xl md:text-5xl font-bold leading-tight drop-shadow-lg mb-4">
-          Selamat Datang di
-        </h1>
-        <h2 className="text-3xl md:text-4xl font-bold text-teal-300 drop-shadow-lg mb-2">
-          Pelayanan Statistik Terpadu
-        </h2>
-        <p className="text-lg text-white/80 mt-4">
-          Badan Pusat Statistik
-        </p>
       </div>
+    </>
+  )
+}
 
-      <button
-        onClick={() => navigate('/kiosk/status')}
-        className="mt-8 px-16 py-6 text-2xl font-bold rounded-2xl bg-teal-500 hover:bg-teal-400 active:bg-teal-600 text-white shadow-2xl transition-all duration-200 transform hover:scale-105 active:scale-95 min-w-64"
-      >
-        Mulai
-      </button>
-
-      <p className="mt-6 text-white/60 text-sm">
-        Sentuh layar untuk memulai
-      </p>
+function CdUnit({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <div className="cd-unit">
+      <span className={`val ${color}`}>{String(value).padStart(2, '0')}</span>
+      <span className="lbl text-gray-600">{label}</span>
     </div>
   )
 }

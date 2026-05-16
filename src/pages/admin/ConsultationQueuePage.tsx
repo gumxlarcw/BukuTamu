@@ -5,7 +5,7 @@ import { consultationsApi } from '@/api/consultations'
 import { QueueList } from '@/components/admin/QueueList'
 import { QueueCallButton } from '@/components/admin/QueueCallButton'
 import { useAuth } from '@/providers/AuthProvider'
-import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion } from '@/lib/role-access'
+import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, needsQueueCall } from '@/lib/role-access'
 import type { Visit } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -65,8 +65,8 @@ export default function ConsultationQueuePage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="admin-h1">Antrian Konsultasi</h1>
-          <p className="admin-subtitle">Manajemen antrian layanan hari ini</p>
+          <h1 className="admin-h1">Antrian PST</h1>
+          <p className="admin-subtitle">4 layanan inti SKD: Perpustakaan, Konsultasi, Rekomendasi, Penjualan</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={handleTestSound}>
@@ -97,10 +97,12 @@ export default function ConsultationQueuePage() {
           visits={visits}
           renderActions={(visit: Visit) => (
             <>
-              <QueueCallButton
-                visitId={visit.id_kunjungan}
-                nomor_antrian={visit.nomor_antrian}
-              />
+              {needsQueueCall(parseLayananForRole(visit.jenis_layanan)) && (
+                <QueueCallButton
+                  visitId={visit.id_kunjungan}
+                  nomor_antrian={visit.nomor_antrian}
+                />
+              )}
               <Button
                 size="sm"
                 variant="outline"

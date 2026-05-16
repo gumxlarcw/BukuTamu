@@ -1,14 +1,11 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
-import { useQuery } from '@tanstack/react-query'
 import { kioskApi } from '@/api/kiosk'
-import { servicesApi } from '@/api/services'
 import { FaceRecognize } from '@/components/kiosk/FaceRecognize'
-import { ServiceBubble } from '@/components/kiosk/ServiceBubble'
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { GuestPickerModal } from '@/components/kiosk/GuestPickerModal'
+import { ProfileGapsModal } from '@/components/kiosk/ProfileGapsModal'
 import { useInactivityTimeout } from '@/hooks/useInactivityTimeout'
-import type { Service } from '@/api/services'
 
 interface MatchedGuest {
   id: number
@@ -17,24 +14,50 @@ interface MatchedGuest {
 
 export default function FaceRecognizePage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const visitState = location.state ?? {}
+  const jenis_layanan: string[] = visitState.jenis_layanan ?? []
+  const layanan_lainnya: string = visitState.layanan_lainnya ?? ''
+  const sarana: number[] = visitState.sarana ?? []
+  const sarana_lainnya: string = visitState.sarana_lainnya ?? ''
   const [matchedGuest, setMatchedGuest] = useState<MatchedGuest | null>(null)
-  const [selectedService, setSelectedService] = useState<Service | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  // Profile gaps state
+  const [profileGaps, setProfileGaps] = useState<string[] | null>(null)
+  const [gapsModalOpen, setGapsModalOpen] = useState(false)
+  const [gapsChecked, setGapsChecked] = useState(false)
 
   useInactivityTimeout(() => navigate('/kiosk'), 120000)
 
-  const { data: services, isLoading: servicesLoading } = useQuery({
-    queryKey: ['services'],
-    queryFn: () => servicesApi.list().then(r => r.data.data),
-    enabled: matchedGuest !== null,
+  // Check profile gaps when guest is confirmed
+  useEffect(() => {
+    if (!matchedGuest || gapsChecked) return
+    kioskApi.getProfileGaps(matchedGuest.id)
+      .then(res => {
+        const gaps = res.data.data.gaps
+        setProfileGaps(gaps)
+        if (gaps.length > 0) setGapsModalOpen(true)
+        setGapsChecked(true)
+      })
+      .catch(() => setGapsChecked(true))
+  }, [matchedGuest, gapsChecked])
+
+  const updateProfileMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      kioskApi.updateProfile(matchedGuest!.id, data),
+    onSuccess: () => {
+      setGapsModalOpen(false)
+      setProfileGaps([])
+    },
   })
 
   const visitMutation = useMutation({
-    mutationFn: (data: { id_user: number; jenis_layanan: string }) =>
+    mutationFn: (data: { id_user: number; jenis_layanan: string[]; layanan_lainnya: string; sarana: number[]; sarana_lainnya: string }) =>
       kioskApi.visit(data),
     onSuccess: (res) => {
-      const visitId = res.data.data.id_kunjungan
-      navigate(`/kiosk/ticket/${visitId}`)
+      navigate(`/kiosk/ticket/${res.data.data.id_kunjungan}`)
     },
     onError: (err: Error) => {
       setSubmitError(err.message || 'Terjadi kesalahan. Silakan coba lagi.')
@@ -43,25 +66,36 @@ export default function FaceRecognizePage() {
 
   const handleMatch = (guest: MatchedGuest) => {
     setMatchedGuest(guest)
+    setGapsChecked(false)
+    setProfileGaps(null)
   }
 
-  const handleNoMatch = () => {
-    navigate('/kiosk/service')
+  const handleNoMatch = () => navigate('/kiosk/form', { state: visitState })
+  const handleManualSelect = () => setPickerOpen(true)
+
+  const handlePickerSelect = (guest: { id: number; nama: string }) => {
+    setPickerOpen(false)
+    setMatchedGuest(guest)
+    setGapsChecked(false)
+    setProfileGaps(null)
   }
 
   const handleConfirmVisit = () => {
-    if (!matchedGuest || !selectedService) return
+    if (!matchedGuest) return
     setSubmitError(null)
     visitMutation.mutate({
       id_user: matchedGuest.id,
-      jenis_layanan: selectedService.name,
+      jenis_layanan,
+      layanan_lainnya,
+      sarana,
+      sarana_lainnya,
     })
   }
 
   return (
-    <div className="flex flex-col items-center text-white px-4 max-w-2xl w-full mx-auto">
-      <h1 className="text-3xl font-bold mb-2 drop-shadow-lg text-center">Pengenalan Wajah</h1>
-      <p className="text-white/80 mb-8 text-center">
+    <div className="flex flex-col items-center text-gray-800 px-4 max-w-2xl w-full mx-auto">
+      <h1 className="kiosk-enter text-xl font-bold mb-1 text-center">Pengenalan Wajah</h1>
+      <p className="kiosk-enter text-gray-500 mb-3 text-center text-xs" style={{ animationDelay: '100ms' }}>
         {matchedGuest
           ? `Selamat datang kembali, ${matchedGuest.nama}!`
           : 'Arahkan wajah Anda ke kamera'}
@@ -69,59 +103,85 @@ export default function FaceRecognizePage() {
 
       {/* Face recognition view */}
       {!matchedGuest && (
-        <FaceRecognize onMatch={handleMatch} onNoMatch={handleNoMatch} />
+        <FaceRecognize
+          onMatch={handleMatch}
+          onNoMatch={handleNoMatch}
+          onManualSelect={handleManualSelect}
+        />
       )}
 
-      {/* Service selection after match */}
+      {/* Confirmation after match */}
       {matchedGuest && (
         <div className="w-full">
-          <h2 className="text-2xl font-bold mb-6 text-center">Pilih Layanan</h2>
+          <div className="mb-3 p-3 rounded-xl bg-white/80 backdrop-blur-sm border border-gray-200 shadow-lg text-center">
+            <p className="text-xs mb-0.5 text-gray-600">Layanan yang dipilih:</p>
+            <p className="text-base font-bold text-orange-600 break-words leading-snug">{jenis_layanan.join(', ')}</p>
+          </div>
 
-          {servicesLoading && <LoadingSpinner />}
-
-          {services && (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-              {services.map(service => (
-                <ServiceBubble
-                  key={service.id}
-                  service={service}
-                  selected={selectedService?.id === service.id}
-                  onSelect={() => setSelectedService(service)}
-                />
-              ))}
-            </div>
+          {/* Gaps badge */}
+          {profileGaps && profileGaps.length > 0 && !gapsModalOpen && (
+            <button
+              onClick={() => setGapsModalOpen(true)}
+              className="w-full mb-3 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-700 text-xs font-medium text-center cursor-pointer hover:bg-amber-100 transition-colors"
+            >
+              Ada {profileGaps.length} data yang belum lengkap — ketuk untuk melengkapi
+            </button>
           )}
 
           {submitError && (
-            <div className="mb-6 p-4 rounded-xl bg-red-500/20 border border-red-400/40 text-red-200 text-center">
+            <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-center text-sm overflow-hidden">
               {submitError}
             </div>
           )}
 
-          <div className="flex gap-4">
+          <div className="flex gap-4 w-full max-w-md mx-auto">
             <button
-              onClick={() => {
-                setMatchedGuest(null)
-                setSelectedService(null)
-              }}
-              className="flex-1 px-6 py-5 rounded-xl border-2 border-white/30 text-white text-lg font-semibold hover:bg-white/10 transition-all active:scale-95"
+              onClick={() => setMatchedGuest(null)}
+              className="flex-1 px-4 py-3 rounded-xl border-2 border-gray-300 text-gray-700 text-base font-semibold hover:bg-white/60 transition-all active:scale-95 cursor-pointer"
               disabled={visitMutation.isPending}
             >
               Kembali
             </button>
             <button
               onClick={handleConfirmVisit}
-              disabled={!selectedService || visitMutation.isPending}
-              className={`flex-1 px-6 py-5 rounded-xl text-lg font-bold transition-all active:scale-95
-                ${selectedService && !visitMutation.isPending
-                  ? 'bg-teal-500 hover:bg-teal-400 text-white shadow-xl'
-                  : 'bg-white/20 text-white/40 cursor-not-allowed'
+              disabled={visitMutation.isPending}
+              className={`flex-1 px-4 py-3 rounded-xl text-base font-bold transition-all active:scale-95
+                ${!visitMutation.isPending
+                  ? 'bg-orange-500 hover:bg-orange-400 text-white shadow-xl cursor-pointer'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
             >
               {visitMutation.isPending ? 'Memproses...' : 'Konfirmasi'}
             </button>
           </div>
         </div>
+      )}
+
+      {/* Back button */}
+      <div className="kiosk-enter mt-4 w-full max-w-md mx-auto" style={{ animationDelay: '300ms' }}>
+        <button
+          onClick={() => navigate('/kiosk/status', { state: visitState })}
+          className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 text-gray-700 text-sm font-semibold hover:bg-white/60 transition-all active:scale-95 cursor-pointer"
+        >
+          Kembali
+        </button>
+      </div>
+
+      {/* Guest picker modal */}
+      <GuestPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={handlePickerSelect}
+      />
+
+      {/* Profile gaps modal */}
+      {gapsModalOpen && profileGaps && profileGaps.length > 0 && (
+        <ProfileGapsModal
+          gaps={profileGaps}
+          onSubmit={data => updateProfileMutation.mutate(data)}
+          onSkip={() => setGapsModalOpen(false)}
+          isSubmitting={updateProfileMutation.isPending}
+        />
       )}
     </div>
   )

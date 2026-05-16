@@ -5,9 +5,8 @@ import { toast } from 'sonner'
 import { consultationsApi } from '@/api/consultations'
 import { visitsApi } from '@/api/visits'
 import { ConsultationDataForm } from '@/components/admin/ConsultationDataForm'
-import type { ConsultationDataRow } from '@/types/visit'
+import { parseLayanan, type ConsultationDataRow } from '@/types/visit'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ArrowLeft, Save } from 'lucide-react'
@@ -20,10 +19,17 @@ export default function ConsultationFormPage() {
   const [rows, setRows] = useState<ConsultationDataRow[]>([])
   const [hasilKonsultasi, setHasilKonsultasi] = useState('')
 
-  // Fetch visit info
+  // Fetch visit info — backend Visits::detail() membungkus dengan { visit, consultation, evaluation }
   const { data: visit, isLoading: visitLoading } = useQuery({
     queryKey: ['visit', visitId],
-    queryFn: () => visitsApi.get(visitId).then(r => r.data.data),
+    queryFn: () =>
+      visitsApi.get(visitId).then(r => {
+        const payload = r.data.data as unknown
+        if (payload && typeof payload === 'object' && 'visit' in payload) {
+          return (payload as { visit: typeof r.data.data }).visit
+        }
+        return r.data.data
+      }),
     enabled: !!visitId,
   })
 
@@ -34,11 +40,30 @@ export default function ConsultationFormPage() {
     enabled: !!visitId,
   })
 
-  // Populate form with existing data
+  // Populate form with existing data, atau auto-add 1 row kosong jika fresh load.
   useEffect(() => {
-    if (existingData && existingData.length > 0) {
+    if (!existingData) return
+    if (existingData.length > 0) {
       setRows(existingData)
+    } else if (rows.length === 0) {
+      setRows([
+        {
+          rincian_data: '',
+          wilayah_data: '',
+          tahun_awal: new Date().getFullYear(),
+          tahun_akhir: new Date().getFullYear(),
+          level_data: 1,
+          periode_data: 4,
+          status_data: 4,
+          jenis_publikasi: null,
+          judul_publikasi: null,
+          tahun_publikasi: null,
+          digunakan_nasional: null,
+          kualitas: null,
+        },
+      ])
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingData])
 
   const saveMutation = useMutation({
@@ -57,7 +82,7 @@ export default function ConsultationFormPage() {
   const isLoading = visitLoading || dataLoading
 
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="space-y-5">
       <div className="flex items-center gap-3">
         <Button
           variant="outline"
@@ -67,17 +92,14 @@ export default function ConsultationFormPage() {
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Form Konsultasi</h1>
-          <p className="text-muted-foreground text-sm">Catat kebutuhan data pengunjung</p>
+          <h1 className="admin-h1">Form Konsultasi</h1>
+          <p className="admin-subtitle">Catat kebutuhan data pengunjung</p>
         </div>
       </div>
 
       {/* Visitor info */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Informasi Pengunjung</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="admin-card p-6">
+          <h2 className="text-base font-bold mb-3">Informasi Pengunjung</h2>
           {isLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-5 w-48" />
@@ -95,7 +117,11 @@ export default function ConsultationFormPage() {
               </div>
               <div>
                 <p className="text-muted-foreground">Layanan</p>
-                <p className="font-semibold">{visit.jenis_layanan}</p>
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {parseLayanan(visit.jenis_layanan).map((l, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded bg-orange-100 text-orange-700 text-xs font-medium">{l}</span>
+                  ))}
+                </div>
               </div>
               <div>
                 <p className="text-muted-foreground">No. Antrian</p>
@@ -109,15 +135,11 @@ export default function ConsultationFormPage() {
           ) : (
             <p className="text-muted-foreground text-sm">Data pengunjung tidak ditemukan.</p>
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Consultation data form */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Kebutuhan Data</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="admin-card p-6">
+          <h2 className="text-base font-bold mb-3">Kebutuhan Data</h2>
           {isLoading ? (
             <div className="space-y-3">
               <Skeleton className="h-32 rounded-xl" />
@@ -127,12 +149,12 @@ export default function ConsultationFormPage() {
             <ConsultationDataForm
               rows={rows}
               hasilKonsultasi={hasilKonsultasi}
+              kategoriInstansi={(visit as { kategori_instansi?: number | string } | undefined)?.kategori_instansi ?? null}
               onChange={setRows}
               onHasilChange={setHasilKonsultasi}
             />
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Save button */}
       <div className="flex justify-end gap-3 pb-6">
@@ -140,7 +162,7 @@ export default function ConsultationFormPage() {
           Batal
         </Button>
         <Button
-          className="bg-teal-600 hover:bg-teal-700 text-white"
+          className="bg-orange-600 hover:bg-orange-700 text-white"
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending}
         >

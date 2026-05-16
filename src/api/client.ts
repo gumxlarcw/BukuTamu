@@ -10,7 +10,7 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      if (!window.location.pathname.startsWith('/login')) {
+      if (window.location.pathname.startsWith('/admin')) {
         window.location.href = '/login'
       }
     }

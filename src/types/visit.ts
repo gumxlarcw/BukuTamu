@@ -1,4 +1,4 @@
-export type VisitStatus = 'antri' | 'proses' | 'menunggu_evaluasi' | 'selesai'
+export type VisitStatus = 'antri' | 'dipanggil' | 'proses' | 'diproses' | 'menunggu_evaluasi' | 'selesai'
 
 export interface Visit {
   id_kunjungan: number
@@ -6,12 +6,55 @@ export interface Visit {
   nama: string
   nama_instansi: string
   jenis_layanan: string
+  layanan_lainnya: string | null
+  sarana: string | null
+  sarana_lainnya: string | null
   nomor_antrian: string | null
   status: VisitStatus
   date_visit: string
   durasi_detik: number | null
   selesai_timestamp: string | null
   rating_pengunjung: number | null
+  created_by: string | null
+}
+
+/** Parse jenis_layanan — could be JSON array or plain string */
+export function parseLayanan(val: string | null): string[] {
+  if (!val) return []
+  try {
+    const parsed = JSON.parse(val)
+    return Array.isArray(parsed) ? parsed : [val]
+  } catch {
+    return [val]
+  }
+}
+
+/** Parse sarana codes from JSON array */
+export function parseSarana(val: string | null): number[] {
+  if (!val) return []
+  try {
+    const parsed = JSON.parse(val)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const SARANA_LABELS: Record<number, string> = {
+  1: 'PST (datang langsung)',
+  2: 'PST Online',
+  4: 'Website BPS',
+  9: 'Surat/Email',
+  16: 'Aplikasi Chat',
+  32: 'Lainnya',
+  33: 'Ruang Halmahera',
+  34: 'Ruang Vicon',
+  35: 'Ruang Gamalama',
+  36: 'Ruang Pimpinan',
+}
+
+export function saranaLabel(code: number): string {
+  return SARANA_LABELS[code] ?? `Kode ${code}`
 }
 
 export interface ConsultationDataRow {
@@ -29,6 +72,30 @@ export interface ConsultationDataRow {
   digunakan_nasional: number | null
   kualitas: number | null
 }
+
+export interface DtsenDataRow {
+  id?: number
+  id_kunjungan?: number
+  jenis_konsultasi_dtsen: number
+  hasil: number
+  catatan: string | null
+  nik_dirujuk: string | null
+  tanggal_input?: string
+}
+
+export const JENIS_KONSULTASI_DTSEN_OPTIONS = [
+  { value: 1, label: 'Verifikasi Data Penerima' },
+  { value: 2, label: 'Pengaduan Data' },
+  { value: 3, label: 'Permintaan Pemutakhiran' },
+  { value: 4, label: 'Sanggahan/Keberatan' },
+  { value: 5, label: 'Lainnya' },
+] as const
+
+export const HASIL_DTSEN_OPTIONS = [
+  { value: 1, label: 'Selesai di tempat' },
+  { value: 2, label: 'Perlu follow-up' },
+  { value: 3, label: 'Data tidak ditemukan' },
+] as const
 
 export const LEVEL_DATA_OPTIONS = [
   { value: 1, label: 'Nasional' },
@@ -61,8 +128,17 @@ export const STATUS_DATA_OPTIONS = [
 ] as const
 
 export const JENIS_PUBLIKASI_OPTIONS = [
-  'Publikasi', 'Data Mikro', 'Peta', 'Tabulasi Data', 'Tabel di Website',
+  'Publikasi', 'Data Mikro', 'Peta Wilkerstat', 'Tabulasi Data', 'Tabel di Website',
 ] as const
+
+/** Kategori instansi yang termasuk "pemerintah" (untuk pertanyaan digunakan_nasional). */
+export const KATEGORI_PEMERINTAH = [1, 2, 3, 4] as const
+
+export function isPemerintahKategori(kategori: number | string | null | undefined): boolean {
+  if (kategori === null || kategori === undefined || kategori === '') return false
+  const v = Number(kategori)
+  return (KATEGORI_PEMERINTAH as readonly number[]).includes(v)
+}
 
 export const SERVICE_OPTIONS = [
   'Perpustakaan',
@@ -71,6 +147,7 @@ export const SERVICE_OPTIONS = [
   'Penjualan Produk Statistik',
   'Keperluan Pimpinan',
   'Lainnya',
+  'Konsultasi DTSEN',
 ] as const
 
 export interface DashboardStats {

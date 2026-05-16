@@ -5,6 +5,7 @@ import { SERVICE_OPTIONS } from '@/types/visit'
 interface VisitFilterState {
   q: string
   layanan: string
+  status: string
   tahun: string
   bulan: string
 }
@@ -60,6 +61,21 @@ export function VisitFilters({ filters, onChange }: VisitFiltersProps) {
           {SERVICE_OPTIONS.map(s => (
             <option key={s} value={s}>{s}</option>
           ))}
+        </select>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="filter-status">Status</Label>
+        <select
+          id="filter-status"
+          value={filters.status}
+          onChange={e => update('status', e.target.value)}
+          className="h-9 border rounded px-3 text-sm bg-background"
+        >
+          <option value="">Semua Status</option>
+          <option value="antri">Antri</option>
+          <option value="proses">Proses</option>
+          <option value="menunggu_evaluasi">Menunggu Evaluasi</option>
+          <option value="selesai">Selesai</option>
         </select>
       </div>
       <div className="space-y-1">

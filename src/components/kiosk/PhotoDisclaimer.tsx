@@ -10,8 +10,8 @@ export function PhotoDisclaimer({ onAccept, onDecline }: PhotoDisclaimerProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div className="bg-white/95 text-gray-800 rounded-3xl shadow-2xl max-w-lg w-full p-8">
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-14 h-14 rounded-full bg-teal-100 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-8 h-8 text-teal-600" />
+          <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-8 h-8 text-orange-600" />
           </div>
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Persetujuan Biometrik</h2>
@@ -46,7 +46,7 @@ export function PhotoDisclaimer({ onAccept, onDecline }: PhotoDisclaimerProps) {
           </button>
           <button
             onClick={onAccept}
-            className="flex-1 px-6 py-4 rounded-xl bg-teal-500 hover:bg-teal-400 active:bg-teal-600 text-white text-lg font-bold shadow-lg transition-all"
+            className="flex-1 px-6 py-4 rounded-xl bg-orange-500 hover:bg-orange-400 active:bg-orange-600 text-white text-lg font-bold shadow-lg transition-all"
           >
             Saya Setuju
           </button>

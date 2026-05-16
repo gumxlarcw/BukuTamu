@@ -31,7 +31,7 @@ export function QueueCallButton({ visitId, nomor_antrian }: QueueCallButtonProps
     <Button
       size="sm"
       variant={called ? 'outline' : 'default'}
-      className={called ? '' : 'bg-teal-600 hover:bg-teal-700 text-white'}
+      className={called ? '' : 'bg-orange-600 hover:bg-orange-700 text-white'}
       onClick={handleCall}
       disabled={!nomor_antrian || loading}
     >

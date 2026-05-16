@@ -6,7 +6,6 @@ import { guestsApi } from '@/api/guests'
 import { VisitorForm } from '@/components/kiosk/VisitorForm'
 import type { GuestFormData } from '@/types/guest'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft } from 'lucide-react'
 
 const EMPTY_FORM: GuestFormData = {
@@ -15,11 +14,17 @@ const EMPTY_FORM: GuestFormData = {
   email: '',
   notel: '',
   jeniskelamin: 'Laki-laki',
+  umur: 0,
+  disabilitas: 0,
+  jenis_disabilitas: 0,
   pendidikan: 0,
   pekerjaan: 0,
+  pekerjaan_lainnya: '',
   kategori_instansi: 0,
+  kategori_lainnya: '',
   nama_instansi: '',
   pemanfaatan: 0,
+  pemanfaatan_lainnya: '',
   pengaduan: 'Tidak',
 }
 
@@ -47,7 +52,7 @@ export default function GuestAddPage() {
   })
 
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="max-w-3xl space-y-5">
       <div className="flex items-center gap-3">
         <Button
           variant="outline"
@@ -57,18 +62,14 @@ export default function GuestAddPage() {
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Tambah Tamu Baru</h1>
-          <p className="text-muted-foreground text-sm">Isi data pengunjung secara manual</p>
+          <h1 className="admin-h1">Tambah Tamu Baru</h1>
+          <p className="admin-subtitle">Isi data pengunjung secara manual</p>
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Data Pengunjung</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {/* VisitorForm uses kiosk styles, we wrap it in a dark container to keep consistency */}
-          <div className="bg-gray-800 rounded-xl p-6">
+      <div className="admin-card p-6">
+          <h2 className="text-base font-bold mb-4 text-[--admin-text]">Data Pengunjung</h2>
+          <div className="admin-form-wrap">
             <VisitorForm value={formData} onChange={setFormData} />
           </div>
 
@@ -77,15 +78,14 @@ export default function GuestAddPage() {
               Batal
             </Button>
             <Button
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              className="bg-orange-600 hover:bg-orange-700 text-white"
               disabled={!isValid || createMutation.isPending}
               onClick={() => createMutation.mutate()}
             >
               {createMutation.isPending ? 'Menyimpan...' : 'Simpan Tamu'}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </div>
     </div>
   )
 }
