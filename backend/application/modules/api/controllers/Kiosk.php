@@ -111,6 +111,17 @@ class Kiosk extends Api_base {
         ];
 
         $this->db->insert('tamdes_buku', $guest_data);
+        if ($this->db->affected_rows() < 1) {
+            // First insert silently failed (NOT NULL violation, charset issue, etc.) —
+            // surface a real 500 instead of letting the FE redirect to /kiosk/ticket/0.
+            $err = $this->db->error();
+            $this->db->query('UNLOCK TABLES');
+            log_message('error', 'Kiosk::register tamdes_buku insert failed: ' . print_r($err, true));
+            $this->json_response([
+                'success' => false,
+                'message' => 'Gagal mendaftarkan tamu (database error). Silakan coba lagi atau hubungi petugas.',
+            ], 500);
+        }
 
         // Insert visit — jenis_layanan & sarana stored as JSON arrays
         $jenis_layanan_raw = $input['jenis_layanan'] ?? '';
@@ -134,6 +145,18 @@ class Kiosk extends Api_base {
 
         $this->db->insert('tamdes_kunjungan', $visit_data);
         $id_kunjungan = $this->db->insert_id();
+        if (!$id_kunjungan || $this->db->affected_rows() < 1) {
+            // tamdes_kunjungan.id_kunjungan is AUTO_INCREMENT — insert_id()=0 means
+            // the INSERT failed (FK constraint, etc.). FE would otherwise navigate
+            // to /kiosk/ticket/0 and 404 silently while showing "Pendaftaran berhasil".
+            $err = $this->db->error();
+            $this->db->query('UNLOCK TABLES');
+            log_message('error', 'Kiosk::register tamdes_kunjungan insert failed: ' . print_r($err, true));
+            $this->json_response([
+                'success' => false,
+                'message' => 'Gagal membuat kunjungan (database error). Silakan coba lagi atau hubungi petugas.',
+            ], 500);
+        }
 
         $this->db->query('UNLOCK TABLES');
 
@@ -202,6 +225,17 @@ class Kiosk extends Api_base {
 
         $this->db->insert('tamdes_kunjungan', $visit_data);
         $id_kunjungan = $this->db->insert_id();
+        if (!$id_kunjungan || $this->db->affected_rows() < 1) {
+            // FK on id_user → tamdes_buku is the realistic failure mode here:
+            // FE passed an id_user that doesn't exist (or was just deleted).
+            // Returning success with id_kunjungan=0 makes FE 404 on /kiosk/ticket/0.
+            $err = $this->db->error();
+            log_message('error', 'Kiosk::visit tamdes_kunjungan insert failed (id_user=' . $id_user . '): ' . print_r($err, true));
+            $this->json_response([
+                'success' => false,
+                'message' => 'Gagal membuat kunjungan. ID tamu tidak valid atau database error.',
+            ], 500);
+        }
 
         $this->json_response([
             'success' => true,
