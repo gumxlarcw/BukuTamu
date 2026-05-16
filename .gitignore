@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local backup artifacts (CLAUDE.md per-file backup rule — never commit)
+*.backup
+*.backup2
+
+# Large media (kept on disk for deploy, but too big for git)
+public/video/
+public/hls/
