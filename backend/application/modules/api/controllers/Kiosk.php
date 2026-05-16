@@ -266,17 +266,31 @@ class Kiosk extends Api_base {
             }
         }
 
-        $this->json_response(['success' => true, 'data' => ['gaps' => $gaps], 'message' => 'OK']);
+        // Mint a 5-minute continuation token bound to this id_user. The kiosk
+        // FE will pass it to profile_update so we know the update is plausibly
+        // tied to a recent face-match for this guest, not a drive-by from anyone
+        // who guessed an id_user.
+        $kiosk_token = $this->mint_kiosk_token('profile-update', (int) $id_user, 300);
+
+        $this->json_response([
+            'success' => true,
+            'data'    => ['gaps' => $gaps, 'kiosk_token' => $kiosk_token],
+            'message' => 'OK',
+        ]);
     }
 
     /**
      * POST /api/kiosk/profile-update/:id_user
      * Patch only provided fields into tamdes_buku.
+     * Requires a kiosk-token (purpose=profile-update) bound to this id_user,
+     * minted by a recent /api/kiosk/profile-gaps call.
      */
     public function profile_update($id_user) {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
+
+        $this->require_kiosk_token('profile-update', (int) $id_user);
 
         $input = $this->get_json_input();
 

@@ -37,6 +37,12 @@ export const kioskApi = {
   visit: (data: { id_user: number } & VisitContext) =>
     apiClient.post<ApiResponse<{ id_kunjungan: number; nomor_antrian: string | null }>>('/api/kiosk/visit', data),
   getTicket: (id: number) => apiClient.get<ApiResponse<TicketData>>(`/api/kiosk/ticket/${id}`),
-  getProfileGaps: (id_user: number) => apiClient.get<ApiResponse<{ gaps: string[] }>>(`/api/kiosk/profile-gaps/${id_user}`),
-  updateProfile: (id_user: number, data: Record<string, unknown>) => apiClient.post<ApiResponse<null>>(`/api/kiosk/profile-update/${id_user}`, data),
+  // Returns gaps + a short-lived (5 min) kiosk_token bound to this id_user.
+  // The token must be passed to updateProfile via X-Kiosk-Token header.
+  getProfileGaps: (id_user: number) =>
+    apiClient.get<ApiResponse<{ gaps: string[]; kiosk_token: string }>>(`/api/kiosk/profile-gaps/${id_user}`),
+  updateProfile: (id_user: number, data: Record<string, unknown>, kiosk_token: string) =>
+    apiClient.post<ApiResponse<null>>(`/api/kiosk/profile-update/${id_user}`, data, {
+      headers: { 'X-Kiosk-Token': kiosk_token },
+    }),
 }

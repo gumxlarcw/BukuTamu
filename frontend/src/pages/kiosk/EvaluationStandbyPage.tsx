@@ -27,7 +27,12 @@ export default function EvaluationStandbyPage() {
 
   useEffect(() => {
     if (data?.data?.id_kunjungan) {
-      navigate(`/kiosk/evaluasi/${data.data.id_kunjungan}`)
+      // /pending mints a 10-min kiosk_token bound to this id_kunjungan.
+      // Pass it via route state — EvaluationPage uses it for both getForm
+      // (GET /api/evaluations/{id}) and submit (POST /api/evaluations/{id}).
+      navigate(`/kiosk/evaluasi/${data.data.id_kunjungan}`, {
+        state: { kiosk_token: data.data.kiosk_token },
+      })
     }
   }, [data, navigate])
 

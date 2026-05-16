@@ -15,9 +15,15 @@ interface EvaluationFormBackendShape {
 }
 
 export const evaluationsApi = {
-  getPending: () => apiClient.get<ApiResponse<{ id_kunjungan: number } | null>>('/api/evaluations/pending'),
-  getForm: async (id: number) => {
-    const r = await apiClient.get<ApiResponse<EvaluationFormBackendShape>>(`/api/evaluations/${id}`)
+  // /pending now returns a kiosk_token (10 min) bound to id_kunjungan.
+  // Tablet stores it and passes via X-Kiosk-Token header on both getForm
+  // and submit — the form fetch + the submission share the same token.
+  getPending: () =>
+    apiClient.get<ApiResponse<{ id_kunjungan: number; kiosk_token: string } | null>>('/api/evaluations/pending'),
+  getForm: async (id: number, kiosk_token: string) => {
+    const r = await apiClient.get<ApiResponse<EvaluationFormBackendShape>>(`/api/evaluations/${id}`, {
+      headers: { 'X-Kiosk-Token': kiosk_token },
+    })
     const indikator = r.data.data?.indikator ?? {}
     const indicators: EvaluationIndicator[] = Object.entries(indikator).map(([key, label]) => ({
       id: Number(key),
@@ -33,13 +39,15 @@ export const evaluationsApi = {
     const formData: EvaluationFormData = { indicators, konsultasiKualitas }
     return { ...r, data: { ...r.data, data: formData } }
   },
-  submit: (id: number, data: EvaluationSubmission) => {
+  submit: (id: number, data: EvaluationSubmission, kiosk_token: string) => {
     const payload = {
       skor_keseluruhan: data.overall_score,
       kepuasan: Object.fromEntries(data.indicators.map(i => [i.id, i.satisfaction])),
       kualitas_per_konsultasi: data.kualitas_per_konsultasi ?? {},
     }
-    return apiClient.post<ApiResponse<null>>(`/api/evaluations/${id}`, payload)
+    return apiClient.post<ApiResponse<null>>(`/api/evaluations/${id}`, payload, {
+      headers: { 'X-Kiosk-Token': kiosk_token },
+    })
   },
   getResults: (id: number) =>
     apiClient.get<ApiResponse<EvaluationResult>>(`/api/evaluations/${id}/results`),

@@ -26,18 +26,22 @@ export default function FaceRecognizePage() {
 
   // Profile gaps state
   const [profileGaps, setProfileGaps] = useState<string[] | null>(null)
+  const [profileToken, setProfileToken] = useState<string | null>(null)
   const [gapsModalOpen, setGapsModalOpen] = useState(false)
   const [gapsChecked, setGapsChecked] = useState(false)
 
   useInactivityTimeout(() => navigate('/kiosk'), 120000)
 
-  // Check profile gaps when guest is confirmed
+  // Check profile gaps when guest is confirmed. Backend now returns a
+  // 5-min kiosk_token along with the gaps; we cache it and pass it to
+  // updateProfile so the backend trusts the follow-up mutation.
   useEffect(() => {
     if (!matchedGuest || gapsChecked) return
     kioskApi.getProfileGaps(matchedGuest.id)
       .then(res => {
         const gaps = res.data.data.gaps
         setProfileGaps(gaps)
+        setProfileToken(res.data.data.kiosk_token)
         if (gaps.length > 0) setGapsModalOpen(true)
         setGapsChecked(true)
       })
@@ -45,8 +49,10 @@ export default function FaceRecognizePage() {
   }, [matchedGuest, gapsChecked])
 
   const updateProfileMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      kioskApi.updateProfile(matchedGuest!.id, data),
+    mutationFn: (data: Record<string, unknown>) => {
+      if (!profileToken) throw new Error('Token profil hilang — silakan ulangi pengenalan wajah.')
+      return kioskApi.updateProfile(matchedGuest!.id, data, profileToken)
+    },
     onSuccess: () => {
       setGapsModalOpen(false)
       setProfileGaps([])
@@ -68,6 +74,7 @@ export default function FaceRecognizePage() {
     setMatchedGuest(guest)
     setGapsChecked(false)
     setProfileGaps(null)
+    setProfileToken(null)
   }
 
   const handleNoMatch = () => navigate('/kiosk/form', { state: visitState })
@@ -78,6 +85,7 @@ export default function FaceRecognizePage() {
     setMatchedGuest(guest)
     setGapsChecked(false)
     setProfileGaps(null)
+    setProfileToken(null)
   }
 
   const handleConfirmVisit = () => {

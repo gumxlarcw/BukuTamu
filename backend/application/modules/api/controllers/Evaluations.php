@@ -33,6 +33,15 @@ class Evaluations extends Api_base {
             }
             foreach ($layanan_list as $layanan) {
                 if (in_array($layanan, $pst_services, true)) {
+                    // Mint a 10-min continuation token bound to this id_kunjungan.
+                    // Same token covers both fetch (/api/evaluations/{id} GET) and
+                    // submit (POST). Tablet keeps it in memory; expires when the
+                    // tamu walks away or tablet times out.
+                    $candidate->kiosk_token = $this->mint_kiosk_token(
+                        'eval-submit',
+                        (int) $candidate->id_kunjungan,
+                        600
+                    );
                     $this->json_response(['success' => true, 'data' => $candidate, 'message' => 'OK']);
                     return;
                 }
@@ -43,6 +52,12 @@ class Evaluations extends Api_base {
     }
 
     public function detail($id) {
+        // Both GET (fetch form) and POST (submit eval) require the kiosk-token
+        // minted by /api/evaluations/pending. Endpoint stays unauthenticated by
+        // JWT (tablet kiosk has no admin login) but the token binds the request
+        // to a specific visit that's currently eligible for evaluation.
+        $this->require_kiosk_token('eval-submit', (int) $id);
+
         if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $indikator = $this->indikator_list();
             $evaluation = $this->db->get_where('tamdes_evaluasi_detail', ['id_kunjungan' => $id])->result();

@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { evaluationsApi } from '@/api/evaluations'
 import { EvaluationForm } from '@/components/kiosk/EvaluationForm'
@@ -8,17 +9,29 @@ import type { EvaluationSubmission } from '@/types/evaluation'
 
 export default function EvaluationPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { id } = useParams<{ id: string }>()
+  // Kiosk token was minted by /api/evaluations/pending and passed here via
+  // route state by EvaluationStandbyPage. Same token covers both getForm and
+  // submit (10-min TTL). If someone navigates here directly without a token
+  // (deep-link, refresh), we bounce back to standby to re-poll.
+  const kioskToken = (location.state as { kiosk_token?: string } | null)?.kiosk_token
+
+  useEffect(() => {
+    if (!kioskToken) navigate('/kiosk/evaluasi', { replace: true })
+  }, [kioskToken, navigate])
 
   const { data: formData, isLoading, isError } = useQuery({
-    queryKey: ['evaluation-form', id],
-    queryFn: () => evaluationsApi.getForm(Number(id)).then(r => r.data.data),
-    enabled: !!id,
+    queryKey: ['evaluation-form', id, kioskToken],
+    queryFn: () => evaluationsApi.getForm(Number(id), kioskToken!).then(r => r.data.data),
+    enabled: !!id && !!kioskToken,
   })
 
   const submitMutation = useMutation({
-    mutationFn: (data: EvaluationSubmission) =>
-      evaluationsApi.submit(Number(id), data),
+    mutationFn: (data: EvaluationSubmission) => {
+      if (!kioskToken) throw new Error('Sesi evaluasi kadaluarsa — kembali ke layar standby.')
+      return evaluationsApi.submit(Number(id), data, kioskToken)
+    },
     onSuccess: () => {
       navigate('/kiosk/evaluasi')
     },

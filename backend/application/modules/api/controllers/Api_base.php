@@ -274,6 +274,74 @@ class Api_base extends CI_Controller {
         return 'selesai';
     }
 
+    /**
+     * Mint a short-lived continuation token for unauthenticated kiosk endpoints.
+     * Format: {purpose}.{bound_id}.{exp_unix}.{base64url-hmac}
+     * HMAC-signed with JWT_SECRET (same secret, different purpose namespace via the
+     * `purpose` claim so a profile-update token can't be replayed as eval-submit).
+     *
+     * Used by:
+     *   - Kiosk::profile_gaps mints `profile-update` token (5 min) for profile_update
+     *   - Evaluations::pending mints `eval-submit` token (10 min) for /api/evaluations/{id} GET+POST
+     */
+    protected function mint_kiosk_token($purpose, $bound_id, $ttl_seconds = 300) {
+        $exp     = time() + $ttl_seconds;
+        $payload = $purpose . '.' . $bound_id . '.' . $exp;
+        $secret  = $this->jwt_helper_secret();
+        $sig     = rtrim(strtr(base64_encode(hash_hmac('sha256', $payload, $secret, true)), '+/', '-_'), '=');
+        return $payload . '.' . $sig;
+    }
+
+    /**
+     * Verify a kiosk continuation token. Sends 401 + exits on any failure.
+     * Token must be sent via X-Kiosk-Token header (or kiosk_token in body for compat).
+     */
+    protected function require_kiosk_token($expected_purpose, $expected_bound_id) {
+        $token = isset($_SERVER['HTTP_X_KIOSK_TOKEN']) ? trim($_SERVER['HTTP_X_KIOSK_TOKEN']) : '';
+        if ($token === '') {
+            $body  = $this->get_json_input();
+            $token = isset($body['kiosk_token']) ? trim((string) $body['kiosk_token']) : '';
+        }
+        if ($token === '') {
+            $this->json_response(['success' => false, 'message' => 'Kiosk token diperlukan'], 401);
+        }
+
+        $parts = explode('.', $token);
+        if (count($parts) !== 4) {
+            $this->json_response(['success' => false, 'message' => 'Kiosk token tidak valid'], 401);
+        }
+        list($purpose, $bound_id, $exp, $sig) = $parts;
+
+        // Verify signature first to avoid leaking timing info on claim values
+        $expected_sig = rtrim(strtr(base64_encode(
+            hash_hmac('sha256', "$purpose.$bound_id.$exp", $this->jwt_helper_secret(), true)
+        ), '+/', '-_'), '=');
+        if (!hash_equals($expected_sig, $sig)) {
+            $this->json_response(['success' => false, 'message' => 'Kiosk token tidak valid'], 401);
+        }
+
+        if ((int) $exp < time()) {
+            $this->json_response(['success' => false, 'message' => 'Kiosk token kadaluarsa'], 401);
+        }
+        if ($purpose !== $expected_purpose) {
+            $this->json_response(['success' => false, 'message' => 'Kiosk token tidak sesuai endpoint'], 403);
+        }
+        if ((string) $bound_id !== (string) $expected_bound_id) {
+            $this->json_response(['success' => false, 'message' => 'Kiosk token tidak cocok dengan resource'], 403);
+        }
+    }
+
+    /**
+     * Read JWT_Helper's secret via reflection so kiosk-token helpers stay in sync
+     * with whatever JWT_Helper resolves (env → .env file → fallback hash).
+     */
+    private function jwt_helper_secret() {
+        $ref  = new ReflectionClass($this->jwt_helper);
+        $prop = $ref->getProperty('secret');
+        $prop->setAccessible(true);
+        return $prop->getValue($this->jwt_helper);
+    }
+
     protected function audit($action, $target_type, $target_id = null, $detail = null) {
         $user = $this->current_user->username ?? 'system';
         $this->db->insert('tamdes_audit_log', [
