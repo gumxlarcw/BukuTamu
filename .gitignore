@@ -1,0 +1,7 @@
+# Per-file backup artifacts created by the global CLAUDE.md "backup before edit"
+# rule. Each component dir (backend/, frontend/) already excludes these locally;
+# this root rule covers monorepo-level paths like docs/ that don't have their
+# own .gitignore.
+*.backup
+*.backup2
+*.tmp
