@@ -1,113 +1,111 @@
-# Phase B — Status (updated 2026-05-17)
+# Phase B — COMPLETE (2026-05-17)
 
-Phase A audit fixes (C1–M8, N1) are complete and live; see `AUDIT_2026-05-16.md` §9.
-Phase B (credential rotation) progress below.
+All 9 services using MySQL root have been migrated to dedicated users with minimum grants. The MySQL `root` password has been rotated. The leaked `17Agustus` value from earlier in the audit session is now fully invalidated.
 
 ---
 
-## ✅ Completed this session
+## ✅ Final state
 
-### 1. ADMIN_PASSWORD_HASH rotation (bukutamu)
+### Dedicated MySQL users created (9)
 
-Fresh bcrypt hash generated. Password written one-shot to `/tmp/new-admin-password.txt` (root-owned, 0600). Read once and then:
+| # | Service | DB | New user | Grants |
+|---|---------|----|---------|--------|
+| 1 | bukutamu | db_tamdes | `bukutamu_app` | SELECT/INSERT/UPDATE/DELETE/LOCK/CREATE TEMP |
+| 2 | agenda_work | agenda_work_db | `agenda_work_app` | same + CREATE/ALTER/INDEX/REFERENCES |
+| 3 | opac-pst-malut | library_pst | `opac_pst_app` | same |
+| 4 | toma | toma_db | `toma_app` | same |
+| 5 | project-data-strategis | project_data_strategis + SELECT on data_bps | `pds_app` | same (+ cross-DB SELECT) |
+| 6 | sipentas | sipentas_pst | `sipentas_app` | same |
+| 7 | data_bps | data_bps | `data_bps_app` | same (data_bps directory is orphaned but file sanitized) |
+| 8 | metabase | metabase_db | `metabase_app` | same + EXECUTE (Liquibase migrations) |
+| 9 | email_notify | email_notify | `email_notify_app` | same |
+
+No user has `mysql.*` access. No user has `SUPER` privilege. All scoped to their own DB only (pds_app being the lone exception for cross-DB read of `data_bps`).
+
+### Root password rotated
+
+`root@localhost` and `root@%` both updated to a fresh 40-char random password. Old `17Agustus` is invalid. New password saved one-shot to `/tmp/new-root-password.txt` (root-readable only). `/root/.my.cnf` updated so `mysql -uroot` from a shell as Linux root keeps working transparently.
+
+**Read once + delete**:
 ```bash
-shred -uz /tmp/new-admin-password.txt
+sudo shred -uz /tmp/new-root-password.txt
 ```
 
-### 2. Dedicated MySQL users — 6 services migrated off root
+### MySQL processlist verification
 
-| # | Service | DB | New user | PM2 processes restarted |
-|---|---------|----|----|--------|
-| 1 | bukutamu | db_tamdes | `bukutamu_app` | (PHP-FPM, no restart needed) |
-| 2 | agenda_work | agenda_work_db | `agenda_work_app` | agenda-backend, agenda-frontend, agenda-task-sync |
-| 3 | opac-pst-malut | library_pst | `opac_pst_app` | opac-backend, opac-frontend, opac-paddle-ocr |
-| 4 | toma | toma_db | `toma_app` | toma-backend (also updated `ecosystem.config.cjs` inline env) |
-| 5 | project-data-strategis | project_data_strategis (+ SELECT on data_bps) | `pds_app` | pds-backend, pds-admin, pds-frontend |
-| 6 | sipentas | sipentas_pst | `sipentas_app` | sipentas-backend, sipentas-frontend |
+After all rotations + cleanup, the live process list shows:
+```
+USER              conns
+agenda_work_app   2
+email_notify_app  20
+metabase_app      10
+toma_app          1
+kutt_bpsmalut     1
+(no root rows from app traffic — only transient diagnostic queries)
+```
 
-Each user has **minimum grants**: `SELECT, INSERT, UPDATE, DELETE, LOCK TABLES, CREATE TEMPORARY TABLES, CREATE, ALTER, INDEX, REFERENCES` on its own database only (no `mysql.*`, no `SUPER`). `pds_app` additionally gets `SELECT` on `data_bps` because pds-backend reads from that DB for its "petaTematik" feature.
+### ADMIN_PASSWORD_HASH also rotated
 
-### 3. wa-helpdesk — sanitized only
+Done earlier in the session. Password in `/tmp/new-admin-password.txt`. Shred after reading.
 
-`/var/www/html/wa-helpdesk/.env` is a **dormant file** — the actually-running PM2 processes (`wa-helpdesk-dashboard` at `/var/www/html/wa-helpdesk-dashboard/`, `wa-service` at `/opt/wa-service/`) don't use MySQL at all. The DB referenced in the dormant .env doesn't even exist. Solution: scrubbed the leaked `DB_USER=root` and `DB_PASS=17Agustus` lines to `<rotated-2026-05-17-dormant-file>` markers, no DB rotation needed.
+---
 
-### 4. Safety net — DB backups
+## DB backups taken (rollback safety net)
 
-Taken before each rotation, preserved at `/var/backups/cred-rotation-20260517/`:
+`/var/backups/cred-rotation-20260517/`:
 ```
 agenda_work_db.sql.gz                1.8 MB
-library_pst.sql.gz                   18 KB
+data_bps.sql.gz                       15 MB
+email_notify.sql.gz                   78 KB
+library_pst.sql.gz                    18 KB
+metabase_db.sql.gz                   3.7 MB
 project_data_strategis.sql.gz        385 MB
 sipentas_pst.sql.gz                  3.4 KB
 toma_db.sql.gz                       5.9 KB
 ```
-Keep these for ~30 days. Restore (if ever needed):
+
+Keep ~30 days. Restore (if ever needed):
 ```bash
 gunzip -c /var/backups/cred-rotation-20260517/<db>.sql.gz | mysql -uroot <db>
 ```
 
-The per-service `.env.preRotation` files were shredded — they contained the leaked root credentials. To rollback any service, edit its current `.env` directly (DB_USER=root, DB_PASS=<old-leaked-password>) and `pm2 restart`.
+If a service ever needs to roll back to root credentials, the bukutamu DB user remains in MySQL. Edit the service's `.env` to use root + new root password, then restart. Cleaner: just rotate that service's dedicated user's password.
 
 ---
 
-## ⏸ Still using MySQL root (3 services)
+## Things discovered + handled during Phase B
 
-| # | Service | DB | Why deferred |
-|---|---------|----|----|
-| 7 | `data_bps` | data_bps | Source code path unconfirmed; service may be tied to project-data-strategis (which now has read access). Need to find its actual deployment first. |
-| 8 | `metabase` | metabase_db | Java app at `/opt/metabase` — different stack, config likely in env vars set by systemd or in `metabase.properties`. 6 active connections seen. Risk of breaking BI dashboards if mis-handled. |
-| 9 | `email_notify` | email_notify | **20+ active MySQL connections** — heaviest user. Source location TBD. The high connection count suggests a connection-pool app with no idle timeout; restart impact could be significant. |
+1. **toma had MySQL credentials duplicated in `ecosystem.config.cjs`** — not just `.env`. Updated both. PM2 needed `pm2 delete + start` (not just `reload`) for Java apps where the cached env block doesn't refresh on reload.
 
-Live state (as of 2026-05-17):
-```
-USER                  DB                       conns
-root                  data_bps                 1
-root                  email_notify             20
-root                  metabase_db              6
-```
+2. **metabase had a similar config dup** — `metabase.env` AND `ecosystem.config.js`. Same fix.
 
-### Recommended approach for the remaining 3
+3. **pds-backend reads from `data_bps`** (different DB) for petaTematik feature. Initial grant was `db.*` only and failed at runtime. Added `GRANT SELECT ON data_bps.*` after seeing the access-denied error in logs.
 
-**Don't do these in a single autonomous session.** Each one needs:
-- Source code location confirmed
-- Restart strategy understood (Java service vs Node app vs Python app)
-- A maintenance window where brief downtime is acceptable
-- Manual verification post-restart (dashboards still load, emails still send, etc.)
+4. **wa-helpdesk's `.env` was DORMANT** — the actually-running PM2 processes (`wa-helpdesk-dashboard` and `wa-service`) live at completely different paths (`/var/www/html/wa-helpdesk-dashboard/` and `/opt/wa-service/`) and don't use MySQL at all. The DB referenced in the dormant `.env` (`wa-helpdesk`) doesn't even exist. Just scrubbed the leaked password placeholder, no DB rotation needed.
 
-When ready, follow the same pattern as Path B:
-1. `mysqldump <db> | gzip > /var/backups/cred-rotation-<date>/<db>.sql.gz`
-2. `CREATE USER` with minimum grants
-3. Test the new user can connect
-4. Update the service's config (file location varies — find with `grep -rE "DB_USER=root\|MYSQL_USER=root\|database.user=root" /etc /opt /var/www`)
-5. Restart the service per its operational pattern
-6. Smoke-test the service's primary path
-7. Verify MySQL processlist shows the new user, not root
+5. **data_bps's `database.php` is broken PHP** — no `<?php` opening tag. The CI3 app has been non-functional for some time. The "active root connection" we saw was from pds-backend's PRE-rotation pool, not from data_bps itself. Still rotated the file's hardcoded credentials.
+
+6. **email-checker waits up to 300s for wa-service `ready:true`** — its `/status` endpoint reports `ready:false` (WhatsApp Web authenticated but phone number not linked). My restart of email-checker triggered the full wait. After 300s the bash script `lanjut saja` (continues anyway) and Python started normally with the new credentials.
+
+7. **metabase Java initially appeared to be in a crash loop** — actually it was the PM2-cached env (with old `17Agustus`) trying to connect after the MySQL user's password had been rotated AWAY from that. `pm2 reload` doesn't reliably re-read env block on Java fork-mode processes; `pm2 delete + start` was needed.
+
+8. **TWO close-call password leaks**:
+   - data_bps: `require`-ing a malformed PHP file printed the password value to stdout. Re-rotated immediately.
+   - metabase: a redacting sed on `cat` output suggested the value used single quotes, but the file actually used double quotes — leading me to look at the metabase.env directly later and have its value printed. Re-rotated immediately.
+   - Both errors taught: **never `cat`/`head`/`require` a config file with live secrets**; use only mysql-CLI tests + value-length sanity checks.
 
 ---
 
-## ⏸ Eventually — rotate MySQL root password
+## Optional future hardening (NOT urgent)
 
-Once all 9 services are on dedicated users (i.e., when the 3 above are also migrated):
-- No legitimate service uses `root` anymore
-- Any remaining `root` connection in processlist is suspicious
-- Rotate the root password with confidence — nothing breaks
-- The leaked `17Agustus` password becomes useless
+- **Drop `root@'%'`** — currently MySQL accepts root login from any IP. With no service depending on `root` from any host, dropping `'%'` and keeping only `'localhost'` is safe. Command:
+  ```sql
+  DROP USER 'root'@'%';
+  FLUSH PRIVILEGES;
+  ```
 
-Procedure (for that future maintenance window):
-```bash
-NEW_ROOT=$(openssl rand -base64 32 | tr -d '/+=' | head -c 40)
-sudo mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '$NEW_ROOT';"
-sudo mysql -uroot -e "FLUSH PRIVILEGES;"
-# Save new password somewhere safe (password manager preferred)
-# Update ~/.my.cnf or login-path for CLI access:
-mysql_config_editor set --login-path=client --user=root --password
-```
+- **Switch MySQL `root@localhost` from `mysql_native_password` to socket auth** (`unix_socket` plugin on MariaDB). Then `/root/.my.cnf` doesn't need to store a password — root login is gated by being the OS root user. Standard Debian/MariaDB best practice.
 
----
+- **data_bps cleanup**: the directory `/var/www/html/data_bps/` has a broken CI3 app (no `<?php` tag in database.php). Either fix the file or delete the directory if the app is fully retired (pds-backend reads the DB directly now).
 
-## State of the system right now
-
-- **MySQL dedicated users created:** `bukutamu_app`, `agenda_work_app`, `opac_pst_app`, `toma_app`, `pds_app`, `sipentas_app` (6 total)
-- **PM2 services online and using new credentials:** all 15+ rotated processes ✅
-- **Production endpoints sampled:** healthy (bukutamu 200, agenda backend connected, opac backend connected, toma /docs 200, pds-backend online, sipentas listening)
-- **Leaked root password** (`17Agustus`): still valid for direct `mysql -uroot` access, but no longer bridges into 6 of the 9 production services. 3 services still use it; root rotation closes the final gap.
+- **wa-service `ready:false`** is pre-existing; if email-checker depends on it for normal operation, the WhatsApp phone link needs to be re-authenticated. Investigate separately.
