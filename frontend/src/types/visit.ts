@@ -60,11 +60,14 @@ export function saranaLabel(code: number): string {
 export interface ConsultationDataRow {
   id?: number
   rincian_data: string
-  wilayah_data: string
-  tahun_awal: number
-  tahun_akhir: number
-  level_data: number
-  periode_data: number
+  // Field-field di bawah ini tidak di-render di form SKD versi baru — di-keep di
+  // schema/payload supaya tidak break, dan ditampilkan sebagai "-" di panel admin
+  // (legacy data mungkin punya nilai default palsu seperti tahun saat ini).
+  wilayah_data: string | null
+  tahun_awal: number | null
+  tahun_akhir: number | null
+  level_data: number | null
+  periode_data: number | null
   status_data: number
   jenis_publikasi: string | null
   judul_publikasi: string | null

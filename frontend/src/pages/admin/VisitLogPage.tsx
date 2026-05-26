@@ -3,10 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { visitsApi } from '@/api/visits'
 import { consultationsApi } from '@/api/consultations'
-import type { Visit, VisitStatus } from '@/types/visit'
-import { SERVICE_OPTIONS, parseLayanan, parseSarana, saranaLabel } from '@/types/visit'
+import type { Visit, VisitStatus, ConsultationDataRow, DtsenDataRow } from '@/types/visit'
+import {
+  SERVICE_OPTIONS, parseLayanan, parseSarana, saranaLabel,
+  STATUS_DATA_OPTIONS, LEVEL_DATA_OPTIONS, PERIODE_DATA_OPTIONS,
+  JENIS_KONSULTASI_DTSEN_OPTIONS, HASIL_DTSEN_OPTIONS,
+} from '@/types/visit'
 import { SARANA_OPTIONS } from '@/types/guest'
-import { CheckCircle, Lock, Trash2 } from 'lucide-react'
+import { CheckCircle, Lock, Trash2, ClipboardList, Star, Database, ChevronRight as CR } from 'lucide-react'
 import { VisitFilters } from '@/components/admin/VisitFilters'
 import type { VisitFilterState } from '@/components/admin/VisitFilters'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -15,9 +19,16 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download } from 'lucide-react'
 import { exportCsv } from '@/lib/export-csv'
 import { useAuth } from '@/providers/AuthProvider'
-import { canFinalizeLayanan, parseLayananForRole } from '@/lib/role-access'
+import { canFinalizeLayanan, parseLayananForRole, isResepsionisLayanan, isSkdLayanan, isDtsenLayanan, nextStatusAfterCompletion } from '@/lib/role-access'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 
-const STATUS_FLOW: VisitStatus[] = ['antri', 'proses', 'menunggu_evaluasi', 'selesai']
+/* Status flow per layanan:
+ *  - antri → proses              (semua)
+ *  - proses → menunggu_evaluasi  (SKD inti) via nextStatusAfterCompletion()
+ *  - proses → selesai            (DTSEN / Lainnya / Pimpinan) via nextStatusAfterCompletion()
+ *  - menunggu_evaluasi → selesai (admin override; biasanya auto dari tablet eval)
+ * Tidak ada konstanta linear lagi — pakai helper `nextStatusAfterCompletion` di logic
+ * per-visit supaya non-SKD tidak salah jalur lewat menunggu_evaluasi. */
 
 function formatDate(dateStr: string): string {
   try {
@@ -31,6 +42,204 @@ function formatDate(dateStr: string): string {
   }
 }
 
+// Helper: label dari array option
+function optLabel<T extends { value: number; label: string }>(opts: readonly T[], v: number | null | undefined): string {
+  if (v === null || v === undefined) return '-'
+  const found = opts.find(o => o.value === Number(v))
+  return found?.label ?? String(v)
+}
+
+/**
+ * Accordion detail per data konsultasi. Klik baris untuk expand semua field.
+ * Header ringkas: rincian_data + wilayah_data + chip status_data.
+ * Detail expanded: tahun range, level, periode, jenis_publikasi, dll dengan label friendly.
+ */
+function ConsultationDataAccordion({ rows }: { rows: ConsultationDataRow[] }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null)
+  return (
+    <div className="text-sm">
+      <p className="font-semibold mb-2 flex items-center gap-2">
+        <ClipboardList className="w-4 h-4 text-orange-600" />
+        Data Konsultasi ({rows.length} item)
+      </p>
+      <div className="space-y-1.5">
+        {rows.map((row, i) => {
+          const isOpen = openIdx === i
+          // Backend CI sering return tinyint sebagai string ("4") → normalize ke number
+          // supaya strict equality + ternary chip warna + dataNotObtained gate semua benar.
+          const statusNum = Number(row.status_data)
+          const statusOpt = STATUS_DATA_OPTIONS.find(o => o.value === statusNum)
+          const statusTone =
+            statusNum === 1 ? 'bg-emerald-100 text-emerald-700' :
+            statusNum === 2 ? 'bg-amber-100 text-amber-700' :
+            statusNum === 3 ? 'bg-red-100 text-red-700' :
+                              'bg-slate-100 text-slate-600'
+          return (
+            <div key={i} className="rounded-lg border bg-white/60">
+              <button
+                type="button"
+                onClick={() => setOpenIdx(isOpen ? null : i)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors rounded-lg"
+              >
+                <CR className={`w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                <span className="text-xs font-semibold tabular-nums text-muted-foreground w-6 shrink-0">#{i + 1}</span>
+                <span className="flex-1 min-w-0 truncate">{row.rincian_data || <em className="text-muted-foreground">(tanpa rincian)</em>}</span>
+                <span className="text-xs text-muted-foreground truncate hidden sm:inline">{row.wilayah_data || '-'}</span>
+                {statusOpt && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${statusTone}`}>{statusOpt.label}</span>
+                )}
+              </button>
+              {isOpen && (() => {
+                // Status 3=tidak diperoleh, 4=belum diperoleh → field tahun/level/periode/wilayah
+                // tidak relevan. Pakai statusNum (sudah Number()-ed di scope outer) supaya
+                // tidak terkecoh string vs number dari backend.
+                const dataNotObtained = statusNum === 3 || statusNum === 4
+                const digunakanNum = row.digunakan_nasional === null || row.digunakan_nasional === undefined ? null : Number(row.digunakan_nasional)
+                const showDash = (raw: string) => dataNotObtained ? '-' : raw
+                return (
+                  <div className="px-3 pb-3 pt-1 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-xs border-t bg-muted/10">
+                    <DetailField label="Rincian Data" value={row.rincian_data || '-'} colSpan={3} />
+                    <DetailField label="Status Data"  value={optLabel(STATUS_DATA_OPTIONS, statusNum)} colSpan={3} />
+                    <DetailField label="Wilayah Data" value={showDash(row.wilayah_data || '-')} colSpan={3} />
+                    <DetailField label="Tahun Awal"   value={showDash(row.tahun_awal !== null && row.tahun_awal !== undefined ? String(row.tahun_awal) : '-')} />
+                    <DetailField label="Tahun Akhir"  value={showDash(row.tahun_akhir !== null && row.tahun_akhir !== undefined ? String(row.tahun_akhir) : '-')} />
+                    <DetailField label="Level Data"   value={dataNotObtained ? '-' : optLabel(LEVEL_DATA_OPTIONS, row.level_data === null || row.level_data === undefined ? null : Number(row.level_data))} />
+                    <DetailField label="Periode Data" value={dataNotObtained ? '-' : optLabel(PERIODE_DATA_OPTIONS, row.periode_data === null || row.periode_data === undefined ? null : Number(row.periode_data))} />
+                    <DetailField label="Digunakan Nasional" value={digunakanNum === 1 ? 'Ya' : digunakanNum === 0 ? 'Tidak' : '-'} />
+                    {(row.jenis_publikasi || row.judul_publikasi || row.tahun_publikasi) && (
+                      <>
+                        <DetailField label="Jenis Publikasi" value={row.jenis_publikasi || '-'} />
+                        <DetailField label="Judul Publikasi" value={row.judul_publikasi || '-'} colSpan={2} />
+                        <DetailField label="Tahun Publikasi" value={row.tahun_publikasi !== null ? String(row.tahun_publikasi) : '-'} />
+                      </>
+                    )}
+                    {row.kualitas !== null && row.kualitas !== undefined && (
+                      <DetailField label="Kualitas (rating tamu)" value={`${row.kualitas} / 10`} />
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function DetailField({ label, value, colSpan = 1 }: { label: string; value: string; colSpan?: 1 | 2 | 3 }) {
+  const cls = colSpan === 3 ? 'col-span-2 md:col-span-3' : colSpan === 2 ? 'col-span-2' : ''
+  return (
+    <div className={cls}>
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{label}</p>
+      <p className="text-foreground leading-tight mt-0.5 break-words">{value}</p>
+    </div>
+  )
+}
+
+/**
+ * Hasil Evaluasi SKD: tampilkan rating overall + per-indikator dengan label lengkap.
+ * Bar visualisasi sederhana per indikator (skor 1-10 → bar width %).
+ */
+function EvaluationResults({
+  rating,
+  rows,
+  labels,
+}: {
+  rating: number | null
+  rows: Array<{ indikator_id: number; kepuasan: number | string | null }>
+  labels: Record<string, string>
+}) {
+  const sortedRows = [...rows].sort((a, b) => Number(a.indikator_id) - Number(b.indikator_id))
+  // Defensive: backend CI bisa return kepuasan sebagai string ("9") — tanpa Number()
+  // explicit, reduce + akan jadi string concat ("0" + "9" = "09", dst) bukan jumlah aritmetik.
+  const avg = (() => {
+    const nums = rows
+      .map(r => r.kepuasan === null || r.kepuasan === undefined ? null : Number(r.kepuasan))
+      .filter((v): v is number => v !== null && !Number.isNaN(v))
+    return nums.length === 0 ? 0 : nums.reduce((a, b) => a + b, 0) / nums.length
+  })()
+  const fmt2 = (n: number) => n.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (
+    <div className="text-sm">
+      <p className="font-semibold mb-2 flex items-center gap-2">
+        <Star className="w-4 h-4 text-amber-500" />
+        Hasil Evaluasi SKD
+        <span className="text-xs text-muted-foreground font-normal">({rows.length} indikator dinilai)</span>
+      </p>
+      <div className="rounded-lg border bg-amber-50/30 p-3 space-y-3">
+        {/* Rating overall + avg per indikator */}
+        <div className="flex flex-wrap items-center gap-4 pb-2 border-b border-amber-200/60">
+          {rating !== null && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Rating Overall</p>
+              <p className="text-2xl font-bold tabular-nums text-amber-700">{Number(rating)} <span className="text-sm font-normal text-muted-foreground">/ 10</span></p>
+            </div>
+          )}
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Rata-rata Indikator</p>
+            <p className="text-2xl font-bold tabular-nums text-foreground">{fmt2(avg)} <span className="text-sm font-normal text-muted-foreground">/ 10</span></p>
+          </div>
+        </div>
+        {/* Per-indikator bar */}
+        <div className="space-y-1.5">
+          {sortedRows.map(r => {
+            const score = r.kepuasan === null || r.kepuasan === undefined ? 0 : Number(r.kepuasan)
+            const pct = (score / 10) * 100
+            const tone = score >= 8 ? 'bg-emerald-500' : score >= 6 ? 'bg-sky-500' : score >= 4 ? 'bg-amber-500' : 'bg-red-500'
+            const label = labels[String(r.indikator_id)] ?? `Indikator ${r.indikator_id}`
+            return (
+              <div key={r.indikator_id} className="grid grid-cols-[24px_1fr_36px] items-center gap-2 text-xs">
+                <span className="text-[10px] font-bold text-muted-foreground tabular-nums bg-muted rounded px-1 py-0.5 text-center">{Number(r.indikator_id)}</span>
+                <div className="min-w-0">
+                  <p className="text-foreground leading-snug line-clamp-2" title={label}>{label}</p>
+                  <div className="h-1.5 mt-1 bg-muted/60 rounded overflow-hidden">
+                    <div className={`h-full ${tone} transition-all`} style={{ width: `${Math.max(pct, 2)}%` }} />
+                  </div>
+                </div>
+                <span className="text-sm font-bold tabular-nums text-right">{score}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Detail Konsultasi DTSEN (single row per visit di tabel dtsen_konsultasi).
+ * Read-only — petugas DTSEN edit lewat /admin/dtsen/{id}/form.
+ */
+function DtsenResultDetail({ row }: { row: DtsenDataRow }) {
+  const jenisOpt = JENIS_KONSULTASI_DTSEN_OPTIONS.find(o => o.value === row.jenis_konsultasi_dtsen)
+  const hasilOpt = HASIL_DTSEN_OPTIONS.find(o => o.value === row.hasil)
+  const hasilTone =
+    row.hasil === 1 ? 'bg-emerald-100 text-emerald-700' :
+    row.hasil === 2 ? 'bg-amber-100 text-amber-700' :
+                      'bg-red-100 text-red-700'
+  return (
+    <div className="text-sm">
+      <p className="font-semibold mb-2 flex items-center gap-2">
+        <Database className="w-4 h-4 text-sky-600" />
+        Detail Konsultasi DTSEN
+      </p>
+      <div className="rounded-lg border bg-sky-50/30 p-3 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-xs">
+        <DetailField label="Jenis Konsultasi" value={jenisOpt?.label ?? `Kode ${row.jenis_konsultasi_dtsen}`} colSpan={2} />
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Hasil</p>
+          <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded ${hasilTone} mt-0.5`}>
+            {hasilOpt?.label ?? `Kode ${row.hasil}`}
+          </span>
+        </div>
+        {row.nik_dirujuk && <DetailField label="NIK Dirujuk" value={row.nik_dirujuk} colSpan={3} />}
+        <DetailField label="Catatan" value={row.catatan || '(tidak ada catatan)'} colSpan={3} />
+        {row.tanggal_input && <DetailField label="Tanggal Input" value={new Date(row.tanggal_input).toLocaleString('id-ID')} colSpan={3} />}
+      </div>
+    </div>
+  )
+}
+
 function VisitDetailPanel({ visit }: { visit: Visit }) {
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -39,6 +248,9 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
   // Hard delete kunjungan = aksi admin-only (mirror Api_base::require_role('admin')).
   // Operator legacy NOT included supaya konsisten dengan backend.
   const canDelete = role === 'admin' || role === 'superadmin'
+  // Layanan front-office (Lainnya / Keperluan Pimpinan) WAJIB punya keterangan
+  // sebelum bisa diselesaikan — cermin gate backend Visits::status.
+  const needsKeterangan = parseLayananForRole(visit.jenis_layanan).some(isResepsionisLayanan)
 
   const [editServices, setEditServices] = useState<string[]>(() => parseLayanan(visit.jenis_layanan))
   const [editLayananLainnya, setEditLayananLainnya] = useState(visit.layanan_lainnya ?? '')
@@ -50,6 +262,48 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
     queryKey: ['consultation-data', visit.id_kunjungan],
     queryFn: () => consultationsApi.getData(visit.id_kunjungan).then(r => r.data.data),
   })
+
+  // Fetch visit detail unconditionally — punya konsultasi + evaluasi + dtsen + indikator_labels
+  // yang dipakai untuk render section detail, hasil evaluasi, dan catatan DTSEN.
+  const { data: visitDetail } = useQuery({
+    queryKey: ['visit-detail', visit.id_kunjungan],
+    queryFn: () => visitsApi.get(visit.id_kunjungan).then(r => r.data.data),
+  })
+
+  // Backend Visits::detail return shape: { visit, consultation[], evaluation[], dtsen, indikator_labels }
+  type VisitDetail = {
+    consultation?: Array<{ hasil_konsultasi?: string | null }>
+    evaluation?: Array<{ indikator_id: number; kepuasan: number | null }>
+    dtsen?: DtsenDataRow | null
+    indikator_labels?: Record<string, string>
+  }
+  const detail = visitDetail as unknown as VisitDetail | undefined
+  const savedKeterangan = (() => {
+    const first = detail?.consultation?.[0]
+    return first?.hasil_konsultasi ? String(first.hasil_konsultasi).trim() : ''
+  })()
+  const hasKeterangan = savedKeterangan.length > 0
+  // Catatan: gate `blockedByKeterangan` di-handle inline di handleFinalize() — kalau true,
+  // popup Dialog muncul alih-alih disable button. Lebih actionable buat user.
+
+  // Pre-fill editRingkasan dari hasil konsultasi yang sudah disimpan petugas via form
+  // (SKD inti / Lainnya / Pimpinan — semua pakai field konsultasi_pengunjung.hasil_konsultasi).
+  // Untuk DTSEN, hasil ada di tabel sendiri (dtsen_konsultasi.catatan) — ditampilkan read-only
+  // di section terpisah, tidak di-pre-fill ke textarea ini.
+  useEffect(() => {
+    if (hasKeterangan && editRingkasan === '') {
+      setEditRingkasan(savedKeterangan)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKeterangan])
+
+  // Domain flags untuk conditional rendering section
+  const layananList = parseLayanan(visit.jenis_layanan)
+  const hasSkd  = layananList.some(isSkdLayanan)
+  const hasDtsen = layananList.some(isDtsenLayanan)
+  const evaluationRows = detail?.evaluation ?? []
+  const dtsenData = detail?.dtsen ?? null
+  const indikatorLabels = detail?.indikator_labels ?? {}
 
   const statusMutation = useMutation({
     mutationFn: (status: VisitStatus) => visitsApi.updateStatus(visit.id_kunjungan, status),
@@ -79,6 +333,8 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
     onSuccess: () => {
       toast.success('Ringkasan disimpan')
       queryClient.invalidateQueries({ queryKey: ['visits'] })
+      // Refresh visit-detail query supaya gate Selesai langsung unlock setelah ringkasan disimpan.
+      queryClient.invalidateQueries({ queryKey: ['visit-detail', visit.id_kunjungan] })
     },
     onError: () => toast.error('Gagal menyimpan ringkasan'),
   })
@@ -114,7 +370,30 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
     if (confirmed) deleteMutation.mutate()
   }
 
-  const nextStatus = STATUS_FLOW[STATUS_FLOW.indexOf(visit.status) + 1]
+  // Tentukan next status berdasarkan posisi sekarang + jenis layanan:
+  // - 'antri'              → 'proses' (semua role)
+  // - 'proses'             → tergantung layanan: SKD → 'menunggu_evaluasi', lainnya → 'selesai'
+  // - 'menunggu_evaluasi'  → 'selesai' (admin only — biasanya transit otomatis dari tablet eval)
+  // - 'selesai'/null       → tidak ada next
+  const nextStatus: VisitStatus | undefined =
+    visit.status === 'antri'             ? 'proses' :
+    visit.status === 'proses'            ? nextStatusAfterCompletion(parseLayananForRole(visit.jenis_layanan)) :
+    visit.status === 'menunggu_evaluasi' ? 'selesai' :
+    undefined
+
+  // Popup state: tampil saat petugas klik Selesai tapi keterangan kosong (layanan resepsionis).
+  const [showKeteranganDialog, setShowKeteranganDialog] = useState(false)
+
+  // Wrapper yang intercept tombol Selesai sebelum mutation. Gate FE-side:
+  // - kalau visit butuh keterangan dan kosong → popup, jangan kirim ke backend
+  // - kalau lolos → mutasi normal
+  const handleFinalize = (target: VisitStatus) => {
+    if (target === 'selesai' && needsKeterangan && !hasKeterangan && !editRingkasan.trim()) {
+      setShowKeteranganDialog(true)
+      return
+    }
+    statusMutation.mutate(target)
+  }
 
   return (
     <div className="px-4 pb-4 space-y-4 bg-muted/30 rounded-b-lg border-t">
@@ -168,16 +447,23 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
         )}
       </div>
 
-      {/* Consultation data */}
+      {/* ── Detail Data Konsultasi (accordion per row) ── */}
       {consultationData && consultationData.length > 0 && (
-        <div className="text-sm">
-          <p className="font-semibold mb-2">Data Konsultasi ({consultationData.length} item)</p>
-          <div className="space-y-1 text-muted-foreground">
-            {consultationData.map((row, i) => (
-              <p key={i}>{i + 1}. {row.rincian_data} — {row.wilayah_data}</p>
-            ))}
-          </div>
-        </div>
+        <ConsultationDataAccordion rows={consultationData} />
+      )}
+
+      {/* ── Hasil Evaluasi SKD ── */}
+      {hasSkd && evaluationRows.length > 0 && (
+        <EvaluationResults
+          rating={visit.rating_pengunjung}
+          rows={evaluationRows}
+          labels={indikatorLabels}
+        />
+      )}
+
+      {/* ── Detail Konsultasi DTSEN ── */}
+      {hasDtsen && dtsenData && (
+        <DtsenResultDetail row={dtsenData} />
       )}
 
       {/* Read-only banner untuk role yang tidak berwenang atas layanan visit ini */}
@@ -191,20 +477,78 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
         </div>
       )}
 
-      {/* Status actions */}
+      {/* Status actions — tombol Selesai langsung untuk Lainnya/Pimpinan/DTSEN (skip menunggu_evaluasi) */}
       {nextStatus && canEdit && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm text-muted-foreground">Ubah status ke:</span>
           <Button
             size="sm"
             variant="outline"
-            onClick={() => statusMutation.mutate(nextStatus)}
+            onClick={() => handleFinalize(nextStatus)}
             disabled={statusMutation.isPending}
           >
             <StatusBadge status={nextStatus} />
           </Button>
+          {needsKeterangan && nextStatus === 'selesai' && !hasKeterangan && (
+            <span className="text-[11px] text-amber-700 italic">
+              ⓘ Wajib isi keterangan dulu (popup akan muncul)
+            </span>
+          )}
         </div>
       )}
+
+      {/* Dialog popup: muncul saat petugas klik Selesai tapi keterangan kosong (resepsionis only).
+          Blocking — user harus pilih: tutup dialog & isi field, ATAU isi inline di textarea dialog. */}
+      <Dialog open={showKeteranganDialog} onOpenChange={setShowKeteranganDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <Lock className="w-5 h-5" />
+              Keterangan Wajib Diisi
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              Visit kategori <strong>Keperluan Pimpinan / Lainnya</strong> wajib punya
+              keterangan sebelum bisa ditandai <strong>Selesai</strong>.
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Tulis catatan singkat tentang keperluan tamu (mis. siapa yang ditemui, hasil pertemuan).
+            </p>
+            <textarea
+              rows={4}
+              className="w-full border rounded px-3 py-2 text-sm bg-background resize-none"
+              placeholder="Contoh: Bertemu Kepala BPS terkait koordinasi data sensus..."
+              value={editRingkasan}
+              onChange={e => setEditRingkasan(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowKeteranganDialog(false)}>
+              Batal
+            </Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={!editRingkasan.trim() || summaryMutation.isPending || statusMutation.isPending}
+              onClick={async () => {
+                // Simpan keterangan dulu (PUT /api/visits/{id}/summary), lalu transit status=selesai.
+                // Backend `Visits::status` gate verifikasi keterangan ada di DB sebelum allow selesai —
+                // kalau urutan kebalik, gate akan reject.
+                try {
+                  await summaryMutation.mutateAsync()
+                  await statusMutation.mutateAsync('selesai')
+                  setShowKeteranganDialog(false)
+                } catch {
+                  /* toast error sudah di-handle oleh masing-masing mutation */
+                }
+              }}
+            >
+              {summaryMutation.isPending || statusMutation.isPending ? 'Menyimpan...' : 'Simpan & Selesaikan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit layanan + sarana */}
       <div className={`space-y-3 ${canEdit ? '' : 'opacity-50 pointer-events-none select-none'}`}>
@@ -266,13 +610,28 @@ function VisitDetailPanel({ visit }: { visit: Visit }) {
         </Button>
       </div>
 
-      {/* Edit ringkasan */}
+      {/* Edit ringkasan — pre-filled dari form konsultasi untuk SKD, dari kosong untuk Resepsionis */}
       <div className={`space-y-1 ${canEdit ? '' : 'opacity-50 pointer-events-none select-none'}`}>
-        <p className="text-sm text-muted-foreground">Ringkasan / Catatan</p>
+        <p className="text-sm text-muted-foreground">
+          {needsKeterangan ? 'Ringkasan / Keterangan' :
+           hasSkd          ? 'Ringkasan / Hasil Konsultasi (dari Form)' :
+                             'Ringkasan / Catatan'}
+          {needsKeterangan && <span className="text-red-600 ml-1">*wajib</span>}
+        </p>
+        {hasSkd && hasKeterangan && (
+          <p className="text-[11px] text-muted-foreground italic">
+            Diisi otomatis dari form konsultasi yang disimpan petugas PST. Anda bisa edit untuk koreksi.
+          </p>
+        )}
+        {needsKeterangan && hasKeterangan && (
+          <p className="text-xs text-muted-foreground italic">
+            Keterangan tersimpan: "{savedKeterangan}"
+          </p>
+        )}
         <textarea
           rows={3}
           className="w-full border rounded px-3 py-2 text-sm bg-background resize-none"
-          placeholder="Catatan ringkasan..."
+          placeholder={needsKeterangan ? 'Tulis keterangan kunjungan (mis. dari instansi mana, keperluan apa)...' : 'Catatan ringkasan...'}
           value={editRingkasan}
           onChange={e => setEditRingkasan(e.target.value)}
         />

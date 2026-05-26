@@ -117,13 +117,18 @@ class Visits extends Api_base {
 
             $consultation = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->result();
             $evaluation   = $this->db->get_where('tamdes_evaluasi_detail', ['id_kunjungan' => $id])->result();
+            $dtsen        = $this->db->get_where('dtsen_konsultasi', ['id_kunjungan' => $id])->row();
 
             $this->json_response([
                 'success' => true,
                 'data' => [
-                    'visit'        => $visit,
-                    'consultation' => $consultation,
-                    'evaluation'   => $evaluation,
+                    'visit'             => $visit,
+                    'consultation'      => $consultation,
+                    'evaluation'        => $evaluation,
+                    'dtsen'             => $dtsen,
+                    // Label untuk indikator IKM (1..16) supaya FE bisa render hasil evaluasi
+                    // dengan teks lengkap tanpa harus call endpoint lain.
+                    'indikator_labels'  => $this->indikator_list(),
                 ],
                 'message' => 'OK',
             ]);
@@ -192,6 +197,44 @@ class Visits extends Api_base {
             $is_bypass = in_array($role, ['admin', 'superadmin', 'operator'], true);
             if (!$is_bypass && $this->next_status_after_completion($visit->jenis_layanan) === 'menunggu_evaluasi') {
                 $status = 'menunggu_evaluasi';
+            }
+        }
+
+        // ── Form-complete gates (defense-in-depth) ──
+        // Berlaku untuk semua role — admin/superadmin sekalipun harus isi. Endpoint /api/visits/{id}/status
+        // adalah satu dari beberapa jalan finalisasi — Consultations::detail + Dtsen::detail juga punya gate
+        // identik agar tidak bisa di-bypass dengan ganti endpoint.
+        if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
+            // Gate 1: keterangan wajib (Lainnya / Keperluan Pimpinan).
+            if ($this->layanan_requires_keterangan($visit->jenis_layanan)) {
+                $konsul     = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->row();
+                $keterangan = $konsul ? trim((string) $konsul->hasil_konsultasi) : '';
+                if ($keterangan === '') {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Keterangan wajib diisi sebelum visit ini bisa diselesaikan. Isi field "Ringkasan / Keterangan" terlebih dahulu.',
+                    ], 400);
+                }
+            }
+            // Gate 2: form SKD wajib (4 layanan inti SKD) — ≥1 baris kebutuhan_data.
+            if ($this->layanan_requires_skd_form($visit->jenis_layanan)) {
+                $cnt = (int) $this->db->where('id_kunjungan', $id)->count_all_results('konsultasi_pengunjung');
+                if ($cnt === 0) {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Form konsultasi SKD belum lengkap. Isi minimal 1 baris kebutuhan data + ringkasan konsultasi di halaman form konsultasi sebelum menyelesaikan visit.',
+                    ], 400);
+                }
+            }
+            // Gate 3: form DTSEN wajib (Konsultasi DTSEN) — 1 baris dtsen_konsultasi.
+            if ($status === 'selesai' && $this->layanan_requires_dtsen_form($visit->jenis_layanan)) {
+                $cnt = (int) $this->db->where('id_kunjungan', $id)->count_all_results('dtsen_konsultasi');
+                if ($cnt === 0) {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Form DTSEN belum diisi. Lengkapi jenis konsultasi, hasil, dan catatan sebelum menyelesaikan.',
+                    ], 400);
+                }
             }
         }
 
