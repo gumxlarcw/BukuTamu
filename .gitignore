@@ -9,3 +9,6 @@
 # Claude Code — personal/local overrides (shared config is checked in)
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Diagram scratch files kept by author locally — keep out of repo root
+/Diklat Prakom.drawio
