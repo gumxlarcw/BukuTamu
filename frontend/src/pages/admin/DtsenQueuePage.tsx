@@ -36,7 +36,14 @@ export default function DtsenQueuePage() {
       toast.success('Status berhasil diperbarui')
       queryClient.invalidateQueries({ queryKey: ['dtsen-queue'] })
     },
-    onError: () => toast.error('Gagal memperbarui status'),
+    onError: (e: unknown) => {
+      // Surface backend message untuk pesan "Form DTSEN belum diisi..." yang explicit.
+      const msg = e && typeof e === 'object' && 'response' in e
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? (e as any).response?.data?.message
+        : null
+      toast.error(msg || 'Gagal memperbarui status')
+    },
   })
 
   // Reuse endpoint test-sound dari consultations — kirim TES ke dashboard TV (universal).

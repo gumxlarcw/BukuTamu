@@ -12,13 +12,14 @@ import { Plus, Trash2 } from 'lucide-react'
 function emptyRow(): ConsultationDataRow {
   return {
     rincian_data: '',
-    // Field-field non-spec dipertahankan di payload supaya schema DB tidak break,
-    // tapi tidak di-render di UI.
-    wilayah_data: '',
-    tahun_awal: new Date().getFullYear(),
-    tahun_akhir: new Date().getFullYear(),
-    level_data: 1,
-    periode_data: 4,
+    // Field non-spec form SKD versi baru: simpan null supaya panel admin & export
+    // tidak menampilkan default palsu (mis. tahun saat ini, level Nasional, periode
+    // Tahunan) yang sebenarnya tidak pernah diisi petugas. Schema DB nullable.
+    wilayah_data: null,
+    tahun_awal: null,
+    tahun_akhir: null,
+    level_data: null,
+    periode_data: null,
     status_data: 4, // default "Belum Diperoleh"
     jenis_publikasi: null,
     judul_publikasi: null,

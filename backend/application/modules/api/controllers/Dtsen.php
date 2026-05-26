@@ -55,6 +55,18 @@ class Dtsen extends Api_base {
             $this->require_layanan_role($visit->jenis_layanan);
         }
 
+        // Form-complete gate: untuk visit DTSEN, wajib ada baris dtsen_konsultasi sebelum 'selesai'.
+        // Tanpa gate ini petugas bisa PUT status=selesai tanpa pernah POST data DTSEN.
+        if ($status === 'selesai' && $this->layanan_requires_dtsen_form($visit->jenis_layanan)) {
+            $cnt = (int) $this->db->where('id_kunjungan', $id)->count_all_results('dtsen_konsultasi');
+            if ($cnt === 0) {
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Form DTSEN belum diisi. Lengkapi jenis konsultasi, hasil, dan catatan sebelum menyelesaikan.',
+                ], 400);
+            }
+        }
+
         $update = ['status' => $status];
 
         if ($status === 'selesai') {
@@ -96,20 +108,26 @@ class Dtsen extends Api_base {
 
             $input = $this->get_json_input();
 
-            $jenis = isset($input['jenis_konsultasi_dtsen']) ? (int)$input['jenis_konsultasi_dtsen'] : 0;
-            $hasil = isset($input['hasil']) ? (int)$input['hasil'] : 0;
+            $jenis   = isset($input['jenis_konsultasi_dtsen']) ? (int)$input['jenis_konsultasi_dtsen'] : 0;
+            $hasil   = isset($input['hasil']) ? (int)$input['hasil'] : 0;
+            $catatan = trim((string)($input['catatan'] ?? ''));
             if ($jenis < 1 || $jenis > 5) {
                 $this->json_response(['success' => false, 'message' => 'jenis_konsultasi_dtsen tidak valid (1-5).'], 400);
             }
             if ($hasil < 1 || $hasil > 3) {
                 $this->json_response(['success' => false, 'message' => 'hasil tidak valid (1-3).'], 400);
             }
+            // Form-lengkap gate: catatan wajib non-empty. Tanpa ini visit DTSEN auto-finalize
+            // ke 'selesai' tanpa jejak konteks. Sama strict-nya dengan FE isValid.
+            if ($catatan === '') {
+                $this->json_response(['success' => false, 'message' => 'Catatan wajib diisi.'], 400);
+            }
 
             $row = [
                 'id_kunjungan'           => $id,
                 'jenis_konsultasi_dtsen' => $jenis,
                 'hasil'                  => $hasil,
-                'catatan'                => $input['catatan'] ?? null,
+                'catatan'                => $catatan,
                 'nik_dirujuk'            => !empty($input['nik_dirujuk']) ? substr(preg_replace('/\D/', '', $input['nik_dirujuk']), 0, 16) : null,
                 'tanggal_input'          => date('Y-m-d H:i:s'),
             ];

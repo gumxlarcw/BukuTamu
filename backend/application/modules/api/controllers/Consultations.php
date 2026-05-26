@@ -73,6 +73,33 @@ class Consultations extends Api_base {
             }
         }
 
+        // ── Form-complete gates (defense-in-depth dengan endpoint /api/visits/{id}/status) ──
+        // Cermin gate Visits::status untuk endpoint /api/consultations/{id} yang juga bisa transisi finalisasi.
+        // Kalau gate ini lolos di Visits tapi user pakai Consultations endpoint, harus reject sama.
+        if (in_array($status, ['selesai', 'menunggu_evaluasi'], true)) {
+            // Gate 1: keterangan wajib untuk Lainnya / Keperluan Pimpinan (resepsionis path).
+            if ($this->layanan_requires_keterangan($visit->jenis_layanan)) {
+                $konsul     = $this->db->get_where('konsultasi_pengunjung', ['id_kunjungan' => $id])->row();
+                $keterangan = $konsul ? trim((string) $konsul->hasil_konsultasi) : '';
+                if ($keterangan === '') {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Keterangan wajib diisi sebelum visit ini bisa diselesaikan. Isi field "Ringkasan / Keterangan" terlebih dahulu.',
+                    ], 400);
+                }
+            }
+            // Gate 2: form SKD (kebutuhan_data) wajib ≥1 baris untuk 4 layanan inti SKD.
+            if ($this->layanan_requires_skd_form($visit->jenis_layanan)) {
+                $cnt = (int) $this->db->where('id_kunjungan', $id)->count_all_results('konsultasi_pengunjung');
+                if ($cnt === 0) {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Form konsultasi SKD belum lengkap. Isi minimal 1 baris kebutuhan data + ringkasan konsultasi sebelum menyelesaikan visit.',
+                    ], 400);
+                }
+            }
+        }
+
         $update = ['status' => $status];
 
         if ($status === 'selesai') {
@@ -165,8 +192,37 @@ class Consultations extends Api_base {
             $this->require_layanan_role($visit_check->jenis_layanan);
 
             $input            = $this->get_json_input();
-            $hasil_konsultasi = $input['hasil_konsultasi'] ?? '';
+            $hasil_konsultasi = trim((string) ($input['hasil_konsultasi'] ?? ''));
             $kebutuhan_data   = $input['kebutuhan_data'] ?? [];
+
+            // Form-lengkap gate: wajib ≥1 baris kebutuhan_data dengan rincian_data terisi
+            // + hasil_konsultasi (ringkasan) non-empty. Ringkasan harus diisi sebagai
+            // catatan apa yang dibahas — bukan harus hasil data yang sudah diperoleh.
+            // Untuk kasus "data belum diperoleh", petugas tulis: "Permintaan X akan dikirim
+            // via email setelah data tersedia" — itu sudah sah sebagai ringkasan konsultasi.
+            if (!is_array($kebutuhan_data) || count($kebutuhan_data) === 0) {
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Minimal 1 baris kebutuhan data wajib diisi sebelum simpan.',
+                ], 400);
+            }
+            $valid_rows = 0;
+            foreach ($kebutuhan_data as $r) {
+                $rincian = trim((string)($r['rincian_data'] ?? ''));
+                if ($rincian !== '') $valid_rows++;
+            }
+            if ($valid_rows === 0) {
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Minimal 1 baris kebutuhan data harus berisi "rincian data" yang diminta tamu.',
+                ], 400);
+            }
+            if ($hasil_konsultasi === '') {
+                $this->json_response([
+                    'success' => false,
+                    'message' => 'Ringkasan / hasil konsultasi wajib diisi sebelum simpan.',
+                ], 400);
+            }
 
             // Delete existing rows for this visit
             $this->db->where('id_kunjungan', $id)->delete('konsultasi_pengunjung');

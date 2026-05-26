@@ -9,7 +9,7 @@ import { parseLayanan, type ConsultationDataRow } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/shared/StatusBadge'
-import { ArrowLeft, Save } from 'lucide-react'
+import { ArrowLeft, Save, AlertTriangle } from 'lucide-react'
 
 export default function ConsultationFormPage() {
   const { id } = useParams<{ id: string }>()
@@ -76,8 +76,25 @@ export default function ConsultationFormPage() {
       toast.success('Data konsultasi berhasil disimpan')
       navigate('/admin/consultations')
     },
-    onError: () => toast.error('Gagal menyimpan data konsultasi'),
+    onError: (e: unknown) => {
+      const msg = e && typeof e === 'object' && 'response' in e
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? (e as any).response?.data?.message
+        : null
+      toast.error(msg || 'Gagal menyimpan data konsultasi')
+    },
   })
+
+  // Form-lengkap gate: cermin backend Consultations::data validation.
+  // Wajib: ≥1 baris kebutuhan_data dengan rincian_data terisi + ringkasan/hasil non-empty.
+  // Catatan: ringkasan bukan harus berisi data yang sudah diperoleh — kalau data masih
+  // pending, petugas bisa tulis "Permintaan akan diteruskan ke unit X / dikirim via email".
+  const validRows = rows.filter(r => (r.rincian_data ?? '').trim() !== '')
+  const hasilFilled = hasilKonsultasi.trim() !== ''
+  const formIncomplete = validRows.length === 0 || !hasilFilled
+  const missingReasons: string[] = []
+  if (validRows.length === 0) missingReasons.push('isi minimal 1 baris kebutuhan data dengan rincian yang diminta tamu')
+  if (!hasilFilled) missingReasons.push('isi ringkasan / hasil konsultasi (boleh berupa catatan tindak lanjut kalau data belum diperoleh)')
 
   const isLoading = visitLoading || dataLoading
 
@@ -156,6 +173,16 @@ export default function ConsultationFormPage() {
           )}
       </div>
 
+      {/* Form-incomplete warning */}
+      {!isLoading && formIncomplete && (
+        <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <strong>Form belum lengkap.</strong> Sebelum simpan, {missingReasons.join(' dan ')}.
+          </div>
+        </div>
+      )}
+
       {/* Save button */}
       <div className="flex justify-end gap-3 pb-6">
         <Button variant="outline" onClick={() => navigate('/admin/consultations')}>
@@ -164,7 +191,8 @@ export default function ConsultationFormPage() {
         <Button
           className="bg-orange-600 hover:bg-orange-700 text-white"
           onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || formIncomplete}
+          title={formIncomplete ? `Lengkapi dulu: ${missingReasons.join('; ')}` : undefined}
         >
           <Save className="w-4 h-4 mr-2" />
           {saveMutation.isPending ? 'Menyimpan...' : 'Simpan Data'}
