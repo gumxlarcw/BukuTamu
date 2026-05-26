@@ -9,7 +9,7 @@ import { canFinalizeLayanan, parseLayananForRole, nextStatusAfterCompletion, nee
 import type { Visit } from '@/types/visit'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ExternalLink, Volume2, ClipboardList, CheckCircle, Lock } from 'lucide-react'
+import { ExternalLink, Volume2, ClipboardList, ClipboardCheck, CheckCircle, Lock } from 'lucide-react'
 
 export default function ConsultationQueuePage() {
   const navigate = useNavigate()
@@ -37,7 +37,15 @@ export default function ConsultationQueuePage() {
       toast.success('Status berhasil diperbarui')
       queryClient.invalidateQueries({ queryKey: ['consultations-queue'] })
     },
-    onError: () => toast.error('Gagal memperbarui status'),
+    onError: (e: unknown) => {
+      // Surface backend message — backend bisa return 400 dengan pesan eksplisit
+      // (mis. "Form konsultasi SKD belum lengkap. Isi minimal 1 baris...").
+      const msg = e && typeof e === 'object' && 'response' in e
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? (e as any).response?.data?.message
+        : null
+      toast.error(msg || 'Gagal memperbarui status')
+    },
   })
 
   const handleTestSound = async () => {
@@ -111,6 +119,23 @@ export default function ConsultationQueuePage() {
                 <ClipboardList className="w-3.5 h-3.5 mr-1" />
                 Mulai
               </Button>
+              {visit.status === 'menunggu_evaluasi' && (
+                <a
+                  href="/kiosk/evaluasi"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Buka halaman evaluasi tablet di tab baru — pengunjung lanjut mengisi evaluasi di sana"
+                >
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 border-amber-300"
+                  >
+                    <ClipboardCheck className="w-3.5 h-3.5 mr-1" />
+                    Buka Evaluasi
+                  </Button>
+                </a>
+              )}
               {visit.status !== 'selesai' && visit.status !== 'menunggu_evaluasi' && (
                 canFinalizeLayanan(role, parseLayananForRole(visit.jenis_layanan)) ? (
                   <Button
