@@ -9,8 +9,25 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { UserPlus, Pencil, Trash2, Shield, Key } from 'lucide-react'
 
-const ROLE_LABELS: Record<string, string> = { superadmin: 'Super Admin', admin: 'Admin', operator: 'Operator' }
-const ROLE_COLORS: Record<string, string> = { superadmin: 'bg-red-100 text-red-700', admin: 'bg-blue-100 text-blue-700', operator: 'bg-gray-100 text-gray-700' }
+// Daftar role lengkap (harus mirror backend Users.php $valid_roles + Api_base.php $role_level).
+// Diurutkan dari tertinggi (akses paling luas) ke terendah (paling sempit).
+const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'superadmin', label: 'Super Admin' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'pimpinan', label: 'Pimpinan (Viewer)' },
+  { value: 'operator', label: 'Operator (Legacy, full access)' },
+  { value: 'petugas_pst', label: 'Petugas PST' },
+  { value: 'resepsionis', label: 'Resepsionis' },
+]
+const ROLE_LABELS: Record<string, string> = Object.fromEntries(ROLE_OPTIONS.map(r => [r.value, r.label]))
+const ROLE_COLORS: Record<string, string> = {
+  superadmin:  'bg-red-100 text-red-700',
+  admin:       'bg-blue-100 text-blue-700',
+  pimpinan:    'bg-purple-100 text-purple-700',
+  operator:    'bg-gray-100 text-gray-700',
+  petugas_pst: 'bg-orange-100 text-orange-700',
+  resepsionis: 'bg-teal-100 text-teal-700',
+}
 
 export default function UserManagementPage() {
   const queryClient = useQueryClient()
@@ -112,9 +129,9 @@ export default function UserManagementPage() {
             <div className="space-y-1">
               <Label>Role</Label>
               <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm bg-background">
-                <option value="operator">Operator</option>
-                <option value="admin">Admin</option>
-                <option value="superadmin">Super Admin</option>
+                {ROLE_OPTIONS.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -136,9 +153,9 @@ export default function UserManagementPage() {
             <div className="space-y-1">
               <Label>Role</Label>
               <select value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))} className="w-full border rounded px-3 py-2 text-sm bg-background">
-                <option value="operator">Operator</option>
-                <option value="admin">Admin</option>
-                <option value="superadmin">Super Admin</option>
+                {ROLE_OPTIONS.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
               </select>
             </div>
             <div className="space-y-1"><Label>Password Baru (kosongkan jika tidak ubah)</Label><Input type="password" value={editForm.password} onChange={e => setEditForm(f => ({ ...f, password: e.target.value }))} /></div>

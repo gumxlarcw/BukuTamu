@@ -5,10 +5,14 @@ import { useAuth } from '@/providers/AuthProvider'
 import type { UserRole } from '@/api/auth'
 
 // Mirrors Api_base::require_role hierarchy. Keep in sync with backend.
+// pimpinan = viewer tier (level 2): boleh lihat halaman read-only setara admin
+// (audit, evaluasi) tapi TIDAK punya bypass untuk mutasi layanan — gate
+// require_layanan_role() di backend tetap menolak finalisasi visit untuk pimpinan.
 const ROLE_LEVEL: Record<UserRole, number> = {
   operator: 1,
   resepsionis: 1,
   petugas_pst: 1,
+  pimpinan: 2,
   admin: 2,
   superadmin: 3,
 }

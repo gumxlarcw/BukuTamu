@@ -51,6 +51,7 @@ const AuditLogPage = lazyRetry(() => import('@/pages/admin/AuditLogPage'))
 const UserManagementPage = lazyRetry(() => import('@/pages/admin/UserManagementPage'))
 const GuestImportPage = lazyRetry(() => import('@/pages/admin/GuestImportPage'))
 const QueueStatsPage = lazyRetry(() => import('@/pages/admin/QueueStatsPage'))
+const AboutPage = lazyRetry(() => import('@/pages/admin/AboutPage'))
 const LandingPage = lazyRetry(() => import('@/pages/LandingPage'))
 const NotFoundPage = lazyRetry(() => import('@/pages/NotFoundPage'))
 
@@ -91,6 +92,7 @@ function App() {
                   <Route path="/admin/audit" element={<RequireRole min="admin"><AuditLogPage /></RequireRole>} />
                   <Route path="/admin/users" element={<RequireRole min="superadmin"><UserManagementPage /></RequireRole>} />
                   <Route path="/admin/queue-stats" element={<QueueStatsPage />} />
+                  <Route path="/admin/tentang" element={<AboutPage />} />
                 </Route>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="*" element={<NotFoundPage />} />

@@ -94,11 +94,14 @@ class Api_base extends CI_Controller {
     }
 
     protected function require_role($min_role) {
-        // resepsionis & petugas_pst share level 1 with legacy operator (different scopes, same tier)
+        // resepsionis & petugas_pst share level 1 with legacy operator (different scopes, same tier).
+        // pimpinan = viewer tier level 2 (boleh akses page admin read-only seperti audit/eval).
+        // Pimpinan TIDAK ada di bypass list require_layanan_role(), jadi tidak bisa finalize visit.
         $role_level = [
             'operator'    => 1,
             'resepsionis' => 1,
             'petugas_pst' => 1,
+            'pimpinan'    => 2,
             'admin'       => 2,
             'superadmin'  => 3,
         ];
@@ -242,6 +245,84 @@ class Api_base extends CI_Controller {
                 ], 400);
             }
         }
+    }
+
+    /**
+     * Decode jenis_layanan dari kolom DB ke array string nama layanan.
+     * Helper internal untuk gate-gate domain di bawah.
+     */
+    private function decode_layanan_list($jenis_layanan_raw) {
+        if (is_array($jenis_layanan_raw)) return $jenis_layanan_raw;
+        if (!is_string($jenis_layanan_raw) || $jenis_layanan_raw === '') return [];
+        $decoded = json_decode($jenis_layanan_raw, true);
+        return is_array($decoded) ? $decoded : [$jenis_layanan_raw];
+    }
+
+    /**
+     * Apakah visit ini WAJIB punya keterangan (ringkasan non-empty) sebelum bisa selesai?
+     * True kalau ada layanan front-office: "Lainnya" atau "Keperluan Pimpinan".
+     * Kategori ini tidak punya form evaluasi/konsultasi SKD, jadi keterangan = satu-satunya
+     * jejak data tentang apa yang dibantu di kunjungan tsb.
+     *
+     * Dipakai oleh Visits::status() + Consultations::detail() (gate finalisasi).
+     */
+    protected function layanan_requires_keterangan($jenis_layanan_raw) {
+        $needs = ['Lainnya', 'Keperluan Pimpinan'];
+        foreach ($this->decode_layanan_list($jenis_layanan_raw) as $l) {
+            if (in_array($l, $needs, true)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Apakah visit ini WAJIB punya form konsultasi PST (≥1 baris kebutuhan_data + hasil_konsultasi)
+     * sebelum bisa di-transition ke menunggu_evaluasi/selesai?
+     * True untuk 4 layanan inti SKD. DTSEN PST-role tapi punya tabel sendiri.
+     */
+    protected function layanan_requires_skd_form($jenis_layanan_raw) {
+        $skd = ['Perpustakaan', 'Konsultasi Statistik', 'Rekomendasi Kegiatan Statistik', 'Penjualan Produk Statistik'];
+        foreach ($this->decode_layanan_list($jenis_layanan_raw) as $l) {
+            if (in_array($l, $skd, true)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Apakah visit ini WAJIB punya form DTSEN (1 baris dtsen_konsultasi) sebelum selesai?
+     * True jika layanan mengandung "Konsultasi DTSEN".
+     */
+    protected function layanan_requires_dtsen_form($jenis_layanan_raw) {
+        foreach ($this->decode_layanan_list($jenis_layanan_raw) as $l) {
+            if ($l === 'Konsultasi DTSEN') return true;
+        }
+        return false;
+    }
+
+    /**
+     * Blok II. Kepuasan terhadap Pelayanan Data dan Informasi Statistik BPS.
+     * 16 indikator (PermenPAN-RB 14/2017 + SKD BPS). Skala Likert 1-10.
+     * Dipindah dari Evaluations.php supaya Visits::detail bisa pakai label yang sama
+     * untuk render hasil evaluasi per kunjungan.
+     */
+    protected function indikator_list() {
+        return [
+            1  => 'Informasi pelayanan pada unit layanan ini tersedia melalui media elektronik maupun non elektronik.',
+            2  => 'Persyaratan pelayanan yang ditetapkan mudah dipenuhi/disiapkan oleh konsumen.',
+            3  => 'Prosedur/alur pelayanan yang ditetapkan mudah diikuti/dilakukan.',
+            4  => 'Jangka waktu penyelesaian pelayanan yang diterima sesuai dengan yang ditetapkan.',
+            5  => 'Biaya pelayanan yang dibayarkan sesuai dengan biaya yang ditetapkan.',
+            6  => 'Produk pelayanan yang diterima sesuai dengan yang dijanjikan.',
+            7  => 'Sarana dan prasarana pendukung pelayanan memberikan kenyamanan.',
+            8  => 'Data BPS mudah diakses melalui sarana utama yang digunakan.',
+            9  => 'Petugas pelayanan dan/atau aplikasi pelayanan online merespon dengan baik.',
+            10 => 'Petugas pelayanan dan/atau aplikasi pelayanan online mampu memberikan informasi yang jelas.',
+            11 => 'Fasilitas pengaduan PST mudah diakses (contoh: Kotak saran dan pengaduan, website https://webapps.bps.go.id/pengaduan, e-mail bpshq@bps.go.id).',
+            12 => 'Tidak ada diskriminasi dalam pelayanan.',
+            13 => 'Tidak ada pelayanan di luar prosedur/kecurangan pelayanan.',
+            14 => 'Tidak ada penerimaan gratifikasi.',
+            15 => 'Tidak ada pungutan liar (pungli) dalam pelayanan.',
+            16 => 'Tidak ada praktik percaloan dalam pelayanan.',
+        ];
     }
 
     /**

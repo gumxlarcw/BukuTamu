@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '@/providers/AuthProvider'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
 import { cn } from '@/lib/utils'
+import type { UserRole } from '@/api/auth'
 import {
   LayoutDashboard,
   Users,
@@ -9,6 +10,7 @@ import {
   Database,
   FileText,
   PlusCircle,
+  Info,
   LogOut,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -18,19 +20,32 @@ interface NavItem {
   label: string
   icon: LucideIcon
   end?: boolean
+  // Whitelist role yang boleh lihat menu. Kalau undefined = semua role auth.
+  allowedRoles?: UserRole[]
 }
+
+// Cermin TopNav: PST/DTSEN hanya untuk petugas PST + admin tier + pimpinan (viewer).
+// Resepsionis TIDAK termasuk (scope front-office saja).
+const PST_DTSEN_ROLES: UserRole[] = ['petugas_pst', 'operator', 'admin', 'superadmin', 'pimpinan']
+// Tambah kunjungan = mutation entry. Pimpinan viewer-only, jadi disembunyikan.
+const MUTATION_ENTRY_ROLES: UserRole[] = ['operator', 'admin', 'superadmin', 'petugas_pst', 'resepsionis']
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/guests', label: 'Daftar Tamu', icon: Users },
-  { to: '/admin/consultations', label: 'Antrian PST', icon: ClipboardList },
-  { to: '/admin/dtsen', label: 'Antrian DTSEN', icon: Database },
+  { to: '/admin/consultations', label: 'Antrian PST', icon: ClipboardList, allowedRoles: PST_DTSEN_ROLES },
+  { to: '/admin/dtsen', label: 'Antrian DTSEN', icon: Database, allowedRoles: PST_DTSEN_ROLES },
   { to: '/admin/visits', label: 'Daftar Kunjungan', icon: FileText },
-  { to: '/admin/manual-entry', label: 'Tambah Kunjungan', icon: PlusCircle },
+  { to: '/admin/manual-entry', label: 'Tambah Kunjungan', icon: PlusCircle, allowedRoles: MUTATION_ENTRY_ROLES },
+  { to: '/admin/tentang', label: 'Tentang', icon: Info },
 ]
 
 export function Sidebar() {
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
+  const userRole = (user?.role ?? 'operator') as UserRole
+  const visibleItems = NAV_ITEMS.filter(item =>
+    !item.allowedRoles || item.allowedRoles.includes(userRole)
+  )
 
   return (
     <aside
@@ -61,7 +76,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 space-y-0.5">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon
           return (
             <NavLink

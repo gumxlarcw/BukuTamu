@@ -1,0 +1,246 @@
+<?php
+defined('BASEPATH') OR exit('No direct script access allowed');
+
+require_once APPPATH . 'modules/api/controllers/Api_base.php';
+
+/**
+ * Notification feed per role — bell icon di TopNav memanggil endpoint ini tiap N detik.
+ *
+ * Filosofi: notifikasi adalah DERIVED STATE, bukan tabel terpisah. Setiap request
+ * query agregat dari tabel sumber (`tamdes_kunjungan`, `konsultasi_pengunjung`, dll).
+ * Keuntungan: selalu sync dengan realita, tidak butuh delete/mark-as-read, idempoten.
+ * Trade-off: cost per request = beberapa COUNT/JOIN. Index sudah ada di kolom relevan.
+ *
+ * Untuk menambah/ubah rule, edit method `rules_for_role()` di bawah.
+ */
+class Notifications extends Api_base {
+
+    public function index() {
+        $this->require_auth();
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
+        }
+
+        $role = isset($this->current_user->role) ? $this->current_user->role : 'operator';
+        $notifications = $this->rules_for_role($role);
+
+        $this->json_response([
+            'success' => true,
+            'data'    => [
+                'notifications' => $notifications,
+                'count'         => count($notifications),
+            ],
+            'message' => 'OK',
+        ]);
+    }
+
+    /**
+     * Notification rule registry per role.
+     *
+     * Setiap rule = method privat yang return array notification (boleh kosong).
+     * Format notification:
+     *   [
+     *     'id'         => 'unique-id-string',     // stable id (mis. "keterangan-empty:643")
+     *     'type'       => 'critical'|'warning'|'info',
+     *     'title'      => 'Short title (40 char)',
+     *     'message'    => 'Body penjelasan singkat',
+     *     'action_url' => '/admin/visits',         // route FE saat di-klik
+     *     'count'      => 3,                       // opsional, ditampilkan kalau ada
+     *     'ts'         => 1716123456,              // unix timestamp untuk sort
+     *   ]
+     */
+    private function rules_for_role($role) {
+        $out = [];
+
+        // Resepsionis: visit Lainnya/Pimpinan yang sedang proses tapi keterangan kosong.
+        // Bisa diselesaikan kalau resepsionis isi ringkasan dulu.
+        if (in_array($role, ['resepsionis', 'admin', 'superadmin'], true)) {
+            $rows = $this->resepsionis_keterangan_pending();
+            if (!empty($rows)) $out = array_merge($out, $rows);
+        }
+
+        // Petugas PST: visit SKD inti yang antri/dipanggil/proses hari ini.
+        if (in_array($role, ['petugas_pst', 'admin', 'superadmin', 'operator'], true)) {
+            $row = $this->pst_queue_active();
+            if ($row !== null) $out[] = $row;
+        }
+
+        // Petugas PST: visit DTSEN yang antri/dipanggil/proses hari ini.
+        if (in_array($role, ['petugas_pst', 'admin', 'superadmin', 'operator'], true)) {
+            $row = $this->dtsen_queue_active();
+            if ($row !== null) $out[] = $row;
+        }
+
+        // Petugas PST: visit SKD yang sudah diproses tapi form konsultasi belum tersimpan.
+        // Visit nyangkut di 'proses' karena petugas belum klik Simpan di form.
+        if (in_array($role, ['petugas_pst', 'admin', 'superadmin'], true)) {
+            $rows = $this->pst_form_missing();
+            if (!empty($rows)) $out = array_merge($out, $rows);
+        }
+
+        // Admin/Superadmin: visit stuck di menunggu_evaluasi >24 jam (tamu lupa eval atau tablet bermasalah).
+        if (in_array($role, ['admin', 'superadmin'], true)) {
+            $row = $this->stuck_evaluation();
+            if ($row !== null) $out[] = $row;
+        }
+
+        // Sort by ts DESC (terbaru di atas), lalu critical > warning > info dalam ts yang sama.
+        $severity_order = ['critical' => 0, 'warning' => 1, 'info' => 2];
+        usort($out, function($a, $b) use ($severity_order) {
+            $sa = $severity_order[$a['type']] ?? 9;
+            $sb = $severity_order[$b['type']] ?? 9;
+            if ($sa !== $sb) return $sa - $sb;
+            return ($b['ts'] ?? 0) - ($a['ts'] ?? 0);
+        });
+
+        return $out;
+    }
+
+    // ── Rule implementations ────────────────────────────────────────────
+
+    /**
+     * Visit kategori Lainnya/Pimpinan yang status=proses (atau antri/dipanggil)
+     * dan belum punya hasil_konsultasi non-empty → resepsionis perlu isi keterangan.
+     * Mengembalikan SATU notification per visit supaya bisa di-link langsung.
+     */
+    private function resepsionis_keterangan_pending() {
+        $sql = "
+            SELECT k.id_kunjungan, b.nama, k.date_visit
+            FROM tamdes_kunjungan k
+            LEFT JOIN tamdes_buku b ON k.id_user = b.id_user
+            LEFT JOIN konsultasi_pengunjung c ON c.id_kunjungan = k.id_kunjungan
+            WHERE DATE(k.date_visit) = CURDATE()
+              AND k.status IN ('antri', 'dipanggil', 'proses')
+              AND (
+                k.jenis_layanan LIKE '%Lainnya%'
+                OR k.jenis_layanan LIKE '%Keperluan Pimpinan%'
+              )
+            GROUP BY k.id_kunjungan
+            HAVING COALESCE(MAX(NULLIF(TRIM(c.hasil_konsultasi), '')), '') = ''
+            ORDER BY k.date_visit DESC
+            LIMIT 20
+        ";
+        $rows = $this->db->query($sql)->result();
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id'         => 'keterangan-empty:' . $r->id_kunjungan,
+                'type'       => 'warning',
+                'title'      => 'Isi keterangan untuk ' . ($r->nama ?: 'tamu'),
+                'message'    => 'Visit Keperluan Pimpinan/Lainnya butuh keterangan sebelum diselesaikan.',
+                'action_url' => '/admin/visits',
+                'ts'         => strtotime($r->date_visit),
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Total visit SKD inti hari ini yang masih antri/dipanggil/proses.
+     * Satu notification aggregate (count) — biar bell tidak penuh per visit.
+     */
+    private function pst_queue_active() {
+        $cnt = (int) $this->db
+            ->where('DATE(date_visit)', date('Y-m-d'))
+            ->where_in('status', ['antri', 'dipanggil', 'proses'])
+            ->group_start()
+                ->like('jenis_layanan', 'Perpustakaan')
+                ->or_like('jenis_layanan', 'Konsultasi Statistik')
+                ->or_like('jenis_layanan', 'Rekomendasi Kegiatan Statistik')
+                ->or_like('jenis_layanan', 'Penjualan Produk Statistik')
+            ->group_end()
+            ->count_all_results('tamdes_kunjungan');
+        if ($cnt === 0) return null;
+        return [
+            'id'         => 'pst-queue-active',
+            'type'       => 'info',
+            'title'      => $cnt . ' tamu di Antrian PST',
+            'message'    => 'Tamu menunggu di antrian SKD inti hari ini.',
+            'action_url' => '/admin/consultations',
+            'count'      => $cnt,
+            'ts'         => time(),
+        ];
+    }
+
+    /**
+     * Total visit DTSEN hari ini yang masih antri/dipanggil/proses.
+     */
+    private function dtsen_queue_active() {
+        $cnt = (int) $this->db
+            ->where('DATE(date_visit)', date('Y-m-d'))
+            ->where_in('status', ['antri', 'dipanggil', 'proses'])
+            ->like('jenis_layanan', 'Konsultasi DTSEN')
+            ->count_all_results('tamdes_kunjungan');
+        if ($cnt === 0) return null;
+        return [
+            'id'         => 'dtsen-queue-active',
+            'type'       => 'info',
+            'title'      => $cnt . ' tamu di Antrian DTSEN',
+            'message'    => 'Tamu menunggu konsultasi DTSEN hari ini.',
+            'action_url' => '/admin/dtsen',
+            'count'      => $cnt,
+            'ts'         => time(),
+        ];
+    }
+
+    /**
+     * Visit SKD yang sudah mulai diproses (status=proses) tapi belum ada baris
+     * konsultasi_pengunjung — petugas lupa save form. Per-visit notification
+     * supaya bisa langsung di-link ke form yang sesuai.
+     */
+    private function pst_form_missing() {
+        $sql = "
+            SELECT k.id_kunjungan, b.nama, k.date_visit
+            FROM tamdes_kunjungan k
+            LEFT JOIN tamdes_buku b ON k.id_user = b.id_user
+            LEFT JOIN konsultasi_pengunjung c ON c.id_kunjungan = k.id_kunjungan
+            WHERE DATE(k.date_visit) = CURDATE()
+              AND k.status = 'proses'
+              AND (
+                k.jenis_layanan LIKE '%Perpustakaan%'
+                OR k.jenis_layanan LIKE '%Konsultasi Statistik%'
+                OR k.jenis_layanan LIKE '%Rekomendasi Kegiatan Statistik%'
+                OR k.jenis_layanan LIKE '%Penjualan Produk Statistik%'
+              )
+            GROUP BY k.id_kunjungan
+            HAVING COUNT(c.id) = 0
+            ORDER BY k.date_visit DESC
+            LIMIT 20
+        ";
+        $rows = $this->db->query($sql)->result();
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id'         => 'pst-form-missing:' . $r->id_kunjungan,
+                'type'       => 'warning',
+                'title'      => 'Lengkapi form SKD untuk ' . ($r->nama ?: 'tamu'),
+                'message'    => 'Visit sudah diproses tapi data konsultasi belum tersimpan.',
+                'action_url' => '/admin/consultations/' . $r->id_kunjungan . '/form',
+                'ts'         => strtotime($r->date_visit),
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Visit stuck di menunggu_evaluasi > 24 jam — kemungkinan tamu lupa evaluasi
+     * atau tablet kiosk error. Admin perlu intervensi manual (mark selesai atau follow-up).
+     */
+    private function stuck_evaluation() {
+        $cnt = (int) $this->db
+            ->where('status', 'menunggu_evaluasi')
+            ->where('date_visit <', date('Y-m-d H:i:s', time() - 86400))
+            ->count_all_results('tamdes_kunjungan');
+        if ($cnt === 0) return null;
+        return [
+            'id'         => 'stuck-eval',
+            'type'       => 'critical',
+            'title'      => $cnt . ' visit stuck di evaluasi >24 jam',
+            'message'    => 'Tamu kemungkinan lupa isi evaluasi atau tablet error. Perlu follow-up manual.',
+            'action_url' => '/admin/visits?status=menunggu_evaluasi',
+            'count'      => $cnt,
+            'ts'         => time() - 86400,
+        ];
+    }
+}

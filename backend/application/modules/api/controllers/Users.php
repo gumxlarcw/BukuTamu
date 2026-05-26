@@ -34,15 +34,37 @@ class Users extends Api_base {
                 $this->json_response(['success' => false, 'message' => 'Username sudah digunakan'], 409);
             }
 
+            // Whitelist: tier admin (superadmin/admin/operator) + scope-roles (petugas_pst, resepsionis)
+            // + viewer (pimpinan). Default 'operator' jika nilai tidak dikenali.
+            // CATATAN PENTING: list ini HARUS sinkron dengan kolom `admin_users.role` (ENUM di MySQL).
+            // Kalau tambah role baru di sini tanpa ALTER TABLE, MySQL silently coerce ke '' (empty) di
+            // mode non-strict — bug yang sulit dideteksi. Verify-after-insert di bawah ini menangkap drift itu.
+            $valid_roles = ['superadmin', 'admin', 'operator', 'petugas_pst', 'resepsionis', 'pimpinan'];
+            $final_role = in_array($role, $valid_roles, true) ? $role : 'operator';
             $this->db->insert('admin_users', [
                 'username'      => $username,
                 'password_hash' => password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]),
                 'nama'          => $nama,
-                'role'          => in_array($role, ['superadmin', 'admin', 'operator']) ? $role : 'operator',
+                'role'          => $final_role,
                 'active'        => 1,
             ]);
+            $new_id = $this->db->insert_id();
 
-            $this->audit('create', 'admin_user', $this->db->insert_id(), ['username' => $username, 'role' => $role]);
+            // Defense: verify role aktual yang tersimpan = role yang diniatkan. Kalau beda berarti
+            // ENUM column tidak punya value tsb → MySQL coerce ke '' → bug silent. Rollback + error explicit.
+            $saved = $this->db->get_where('admin_users', ['id' => $new_id])->row();
+            if (!$saved || $saved->role !== $final_role) {
+                $actual = $saved ? $saved->role : '(row hilang)';
+                $this->db->where('id', $new_id)->delete('admin_users'); // rollback
+                $this->json_response([
+                    'success' => false,
+                    'message' => "Gagal menyimpan role '{$final_role}' — tersimpan sebagai '{$actual}'. "
+                              . "Kolom ENUM admin_users.role belum mengizinkan nilai ini. "
+                              . "Hubungi admin DB: ALTER TABLE admin_users MODIFY COLUMN role ENUM(...) tambahkan '{$final_role}'.",
+                ], 500);
+            }
+
+            $this->audit('create', 'admin_user', $new_id, ['username' => $username, 'role' => $final_role]);
 
             $this->json_response(['success' => true, 'data' => null, 'message' => 'User berhasil dibuat'], 201);
         }
@@ -56,8 +78,15 @@ class Users extends Api_base {
             $input  = $this->get_json_input();
             $update = [];
 
+            // Whitelist sama dengan endpoint create (lihat index() di atas).
+            // HARUS sinkron dengan ENUM admin_users.role — kalau tidak, MySQL coerce ke ''. Defense di bawah.
+            $valid_roles = ['superadmin', 'admin', 'operator', 'petugas_pst', 'resepsionis', 'pimpinan'];
+            $intended_role = null;
             if (isset($input['nama']))   $update['nama']   = trim($input['nama']);
-            if (isset($input['role']))   $update['role']    = in_array($input['role'], ['superadmin', 'admin', 'operator']) ? $input['role'] : 'operator';
+            if (isset($input['role'])) {
+                $intended_role = in_array($input['role'], $valid_roles, true) ? $input['role'] : 'operator';
+                $update['role'] = $intended_role;
+            }
             if (isset($input['active'])) $update['active']  = $input['active'] ? 1 : 0;
 
             if (isset($input['password']) && !empty($input['password'])) {
@@ -73,6 +102,22 @@ class Users extends Api_base {
             }
 
             $this->db->where('id', $id)->update('admin_users', $update);
+
+            // Defense: kalau role di-update, verify nilai yang tersimpan = intended. Kasus ENUM coerce
+            // tidak bisa di-rollback otomatis (kita tidak tau old role), jadi return 500 supaya admin tau.
+            if ($intended_role !== null) {
+                $saved = $this->db->get_where('admin_users', ['id' => $id])->row();
+                if (!$saved || $saved->role !== $intended_role) {
+                    $actual = $saved ? $saved->role : '(row hilang)';
+                    $this->json_response([
+                        'success' => false,
+                        'message' => "Gagal menyimpan role '{$intended_role}' — tersimpan sebagai '{$actual}'. "
+                                  . "Kolom ENUM admin_users.role belum mengizinkan nilai ini. "
+                                  . "Jalankan: ALTER TABLE admin_users MODIFY COLUMN role ENUM(...) tambahkan '{$intended_role}'.",
+                    ], 500);
+                }
+            }
+
             $this->audit('update', 'admin_user', $id, array_diff_key($update, ['password_hash' => '']));
 
             $this->json_response(['success' => true, 'data' => null, 'message' => 'User berhasil diupdate']);

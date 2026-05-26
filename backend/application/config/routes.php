@@ -59,6 +59,7 @@ $route['api/users/(:num)']             = 'api/users/detail/$1';
 
 $route['api/audit']                    = 'api/audit/index';
 $route['api/queue-stats']              = 'api/queue_stats/index';
+$route['api/notifications']            = 'api/notifications/index';
 
 $route['api/dashboard/stats']          = 'api/dashboard/stats';
 $route['api/dashboard/events']         = 'api/dashboard/events';
