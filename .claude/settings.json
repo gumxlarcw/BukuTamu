@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(npm run lint)",
+      "Bash(npm run build)",
+      "Bash(npm run dev)",
+      "Bash(npm run preview)",
+      "Bash(npx prettier --check *)",
+      "Bash(npx tsc --noEmit *)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)",
+      "Bash(git blame:*)",
+      "Bash(pm2 status:*)",
+      "Bash(pm2 logs:*)",
+      "Bash(pm2 describe:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(diff:*)",
+      "Bash(cp * *.backup)",
+      "Bash(mysql -e SELECT*)",
+      "Bash(mysql -e SHOW*)",
+      "Bash(mysql -e DESCRIBE*)",
+      "Bash(mysql -e EXPLAIN*)",
+      "Read(/var/www/html/bukutamu/**)",
+      "Edit(/var/www/html/bukutamu/frontend/src/**)",
+      "Edit(/var/www/html/bukutamu/backend/application/modules/api/**)",
+      "Edit(/var/www/html/bukutamu/docs/**)",
+      "Edit(/var/www/html/bukutamu/.claude/**)",
+      "Write(/var/www/html/bukutamu/frontend/src/**)",
+      "Write(/var/www/html/bukutamu/backend/application/modules/api/**)",
+      "Write(/var/www/html/bukutamu/docs/**)",
+      "Write(/var/www/html/bukutamu/.claude/**)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(rm -fr:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd:*)",
+      "Bash(git branch -D:*)",
+      "Bash(git commit --no-verify:*)",
+      "Bash(sudo rm:*)",
+      "Bash(mysql * DROP *)",
+      "Bash(mysqldump * --add-drop-database*)",
+      "Bash(mv * /dev/null)",
+      "Bash(curl * | sh)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | sh)",
+      "Bash(wget * | bash)",
+      "Read(/etc/shadow)",
+      "Read(/root/.ssh/**)",
+      "Read(/root/.my.cnf)",
+      "Read(**/.env)",
+      "Read(**/.env.*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/validate-bash.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

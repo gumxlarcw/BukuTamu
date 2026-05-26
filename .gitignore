@@ -5,3 +5,7 @@
 *.backup
 *.backup2
 *.tmp
+
+# Claude Code — personal/local overrides (shared config is checked in)
+CLAUDE.local.md
+.claude/settings.local.json

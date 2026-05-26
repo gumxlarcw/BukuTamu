@@ -1,0 +1,30 @@
+{
+  "//": "Shared MCP server config for the bukutamu monorepo. Anyone who checks out this repo and runs Claude Code gets the same MCP tools. Add server entries under 'mcpServers'. Examples below are commented out — uncomment + supply real env vars (NEVER commit secrets; use ${VAR} substitution).",
+  "mcpServers": {
+    "//github-example": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
+    },
+    "//mysql-example": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-mysql"],
+      "env": {
+        "MYSQL_HOST": "127.0.0.1",
+        "MYSQL_DATABASE": "db_tamdes",
+        "MYSQL_USER": "${MYSQL_USER}",
+        "MYSQL_PASSWORD": "${MYSQL_PASSWORD}"
+      }
+    },
+    "//filesystem-example": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/var/www/html/bukutamu"
+      ]
+    }
+  }
+}
