@@ -119,9 +119,10 @@ app.post('/print', (req, res) => {
         .text('--------------------------------')
         .text('Silakan tunggu panggilan')
         .text('Terima kasih atas kunjungannya')
-        .text('')
-        .text('')
-        .cut()
+        // .cut(false, 0): tekan library default `feed(3)` (~9mm). Hardware
+        // cutter sudah memaksa feed ~15-25mm dari print-head ke pisau —
+        // pre-feed software apapun jadi pemborosan kertas.
+        .cut(false, 0)
         .close();
 
       console.log(`✅ Tercetak: ${nomor} | ${nama} | ${layanan}`);
