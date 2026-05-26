@@ -70,12 +70,24 @@ class Evaluations extends Api_base {
                 ->where_in('status_data', [1, 2])
                 ->get('konsultasi_pengunjung')->result();
 
+            // Info tamu (nama + instansi) untuk konfirmasi visual di halaman kiosk.
+            // Tujuan: tamu memastikan form yang muncul memang untuk dirinya, bukan
+            // tamu lain yang masih dalam antrian evaluasi. Kalau nama yang muncul beda,
+            // tamu langsung sadar dan tidak salah submit.
+            $visitor = $this->db
+                ->select('b.nama, b.nama_instansi, k.nomor_antrian, k.jenis_layanan')
+                ->from('tamdes_kunjungan k')
+                ->join('tamdes_buku b', 'k.id_user = b.id_user', 'left')
+                ->where('k.id_kunjungan', $id)
+                ->get()->row();
+
             $this->json_response([
                 'success' => true,
                 'data' => [
                     'indikator'           => $indikator,
                     'evaluation'          => $evaluation,
                     'konsultasi_kualitas' => $konsultasi_kualitas,
+                    'visitor'             => $visitor,
                 ],
                 'message' => 'OK',
             ]);
@@ -234,41 +246,53 @@ class Evaluations extends Api_base {
 
         $overall = $this->db->get()->row();
 
+        // Per-bulan: IKM rata-rata + jumlah responden distinct per bulan.
+        // Group by bulan (1-12). Kalau filter tahun null, agregat lintas tahun masih per bulan
+        // (mis. Januari 2024 + Januari 2025 jadi satu bucket). Untuk view tahun-spesifik (default
+        // currentYear) ini = murni 12 bulan dalam tahun itu.
+        $this->db->select('MONTH(k.date_visit) as bulan,
+                           AVG(d.kepuasan) as ikm_score,
+                           COUNT(DISTINCT d.id_kunjungan) as responden')
+                 ->from('tamdes_evaluasi_detail d')
+                 ->join('tamdes_kunjungan k', 'd.id_kunjungan = k.id_kunjungan');
+
+        if ($tahun) {
+            $this->db->where('YEAR(k.date_visit)', $tahun);
+        }
+
+        $monthly = $this->db->group_by('MONTH(k.date_visit)')
+                            ->order_by('bulan', 'ASC')
+                            ->get()->result();
+
+        // Per-triwulan: IKM rata-rata + jumlah responden per Q1-Q4.
+        // QUARTER(date) returns 1-4. Berguna untuk laporan triwulanan ke pimpinan
+        // (lebih readable dari 12 bulan, dan match siklus pelaporan birokrasi).
+        $this->db->select('QUARTER(k.date_visit) as triwulan,
+                           AVG(d.kepuasan) as ikm_score,
+                           COUNT(DISTINCT d.id_kunjungan) as responden')
+                 ->from('tamdes_evaluasi_detail d')
+                 ->join('tamdes_kunjungan k', 'd.id_kunjungan = k.id_kunjungan');
+        if ($tahun) {
+            $this->db->where('YEAR(k.date_visit)', $tahun);
+        }
+        $quarterly = $this->db->group_by('QUARTER(k.date_visit)')
+                              ->order_by('triwulan', 'ASC')
+                              ->get()->result();
+
         $this->json_response([
             'success' => true,
             'data'    => [
                 'visits'     => $visits,
                 'indicators' => $indicators,
                 'overall'    => $overall,
+                'monthly'    => $monthly,
+                'quarterly'  => $quarterly,
                 'labels'     => $this->indikator_list(),
             ],
             'message' => 'OK',
         ]);
     }
 
-    /**
-     * Blok II. Kepuasan terhadap Pelayanan Data dan Informasi Statistik BPS.
-     * 16 indikator. Skala penilaian: Likert 1-10 (1 = sangat tidak puas, 10 = sangat puas).
-     * Hanya tingkat kepuasan; tingkat kepentingan tidak dipakai lagi.
-     */
-    private function indikator_list() {
-        return [
-            1  => 'Informasi pelayanan pada unit layanan ini tersedia melalui media elektronik maupun non elektronik.',
-            2  => 'Persyaratan pelayanan yang ditetapkan mudah dipenuhi/disiapkan oleh konsumen.',
-            3  => 'Prosedur/alur pelayanan yang ditetapkan mudah diikuti/dilakukan.',
-            4  => 'Jangka waktu penyelesaian pelayanan yang diterima sesuai dengan yang ditetapkan.',
-            5  => 'Biaya pelayanan yang dibayarkan sesuai dengan biaya yang ditetapkan.',
-            6  => 'Produk pelayanan yang diterima sesuai dengan yang dijanjikan.',
-            7  => 'Sarana dan prasarana pendukung pelayanan memberikan kenyamanan.',
-            8  => 'Data BPS mudah diakses melalui sarana utama yang digunakan.',
-            9  => 'Petugas pelayanan dan/atau aplikasi pelayanan online merespon dengan baik.',
-            10 => 'Petugas pelayanan dan/atau aplikasi pelayanan online mampu memberikan informasi yang jelas.',
-            11 => 'Fasilitas pengaduan PST mudah diakses (contoh: Kotak saran dan pengaduan, website https://webapps.bps.go.id/pengaduan, e-mail bpshq@bps.go.id).',
-            12 => 'Tidak ada diskriminasi dalam pelayanan.',
-            13 => 'Tidak ada pelayanan di luar prosedur/kecurangan pelayanan.',
-            14 => 'Tidak ada penerimaan gratifikasi.',
-            15 => 'Tidak ada pungutan liar (pungli) dalam pelayanan.',
-            16 => 'Tidak ada praktik percaloan dalam pelayanan.',
-        ];
-    }
+    /* indikator_list() telah dipindahkan ke Api_base::indikator_list() agar controller
+       lain (mis. Visits::detail) bisa render hasil evaluasi dengan label yang benar. */
 }

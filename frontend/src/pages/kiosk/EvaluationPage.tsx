@@ -1,15 +1,17 @@
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { evaluationsApi } from '@/api/evaluations'
 import { EvaluationForm } from '@/components/kiosk/EvaluationForm'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
-import { CheckCircle } from 'lucide-react'
+import { CheckCircle, UserCircle2, Hash } from 'lucide-react'
+import { parseLayanan } from '@/types/visit'
 import type { EvaluationSubmission } from '@/types/evaluation'
 
 export default function EvaluationPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const queryClient = useQueryClient()
   const { id } = useParams<{ id: string }>()
   // Kiosk token was minted by /api/evaluations/pending and passed here via
   // route state by EvaluationStandbyPage. Same token covers both getForm and
@@ -32,10 +34,20 @@ export default function EvaluationPage() {
       if (!kioskToken) throw new Error('Sesi evaluasi kadaluarsa — kembali ke layar standby.')
       return evaluationsApi.submit(Number(id), data, kioskToken)
     },
-    onSuccess: () => {
-      navigate('/kiosk/evaluasi')
-    },
   })
+
+  // Tampilkan "Terima Kasih!" 4 detik, baru kembali ke standby.
+  // Hapus cache 'evaluation-pending' sebelum navigate — kalau tidak, StandbyPage
+  // pakai data basi yang masih berisi visit ini dan langsung navigate balik ke
+  // form yang sama (visit sudah selesai, submit kedua gagal / overwrite data).
+  useEffect(() => {
+    if (!submitMutation.isSuccess) return
+    const t = setTimeout(() => {
+      queryClient.removeQueries({ queryKey: ['evaluation-pending'] })
+      navigate('/kiosk/evaluasi')
+    }, 4000)
+    return () => clearTimeout(t)
+  }, [submitMutation.isSuccess, navigate, queryClient])
 
   return (
     <div
@@ -81,6 +93,47 @@ export default function EvaluationPage() {
           Bantu kami meningkatkan kualitas pelayanan
         </p>
       </header>
+
+      {/* Visitor confirmation banner — mencegah tamu salah submit form milik orang lain.
+          Tampilkan nama, instansi, no antrian, dan layanan dengan visual prominent. */}
+      {formData?.visitor && !submitMutation.isSuccess && (
+        <section className="kiosk-enter shrink-0 px-4 pb-3" style={{ animationDelay: '80ms' }}>
+          <div className="max-w-2xl mx-auto rounded-2xl bg-white/85 border-2 border-orange-300 shadow-sm px-5 py-4">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-orange-600 text-center mb-2">
+              Konfirmasi Identitas — pastikan ini benar Anda
+            </p>
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+                <UserCircle2 className="w-9 h-9 text-orange-600" strokeWidth={1.5} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-lg font-bold text-gray-900 leading-tight truncate">
+                  {formData.visitor.nama || '(nama tidak tersedia)'}
+                </p>
+                <p className="text-sm text-gray-600 leading-tight truncate">
+                  {formData.visitor.nama_instansi || '(instansi tidak diisi)'}
+                </p>
+                <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                  {formData.visitor.nomor_antrian && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-[11px] font-bold">
+                      <Hash className="w-3 h-3" />
+                      {formData.visitor.nomor_antrian}
+                    </span>
+                  )}
+                  {formData.visitor.jenis_layanan && parseLayanan(formData.visitor.jenis_layanan).map((l, i) => (
+                    <span key={i} className="inline-block px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[11px] font-medium">
+                      {l}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] text-center text-gray-500 mt-3">
+              Bila nama atau antrian di atas <strong>BUKAN milik Anda</strong>, jangan submit — hubungi petugas.
+            </p>
+          </div>
+        </section>
+      )}
 
       <main className="flex-1 min-h-0 px-4 pb-4 max-w-2xl mx-auto w-full kiosk-scroll">
         {isLoading && (

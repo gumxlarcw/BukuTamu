@@ -11,9 +11,17 @@ export interface KonsultasiKualitas {
   kualitas: number | null
 }
 
+export interface EvaluationVisitor {
+  nama: string | null
+  nama_instansi: string | null
+  nomor_antrian: string | null
+  jenis_layanan: string | null
+}
+
 export interface EvaluationFormData {
   indicators: EvaluationIndicator[]
   konsultasiKualitas: KonsultasiKualitas[]
+  visitor: EvaluationVisitor | null
 }
 
 export interface EvaluationSubmission {

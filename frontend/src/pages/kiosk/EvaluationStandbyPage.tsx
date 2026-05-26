@@ -23,6 +23,11 @@ export default function EvaluationStandbyPage() {
     queryKey: ['evaluation-pending'],
     queryFn: () => evaluationsApi.getPending().then(r => r.data),
     refetchInterval: 5000,
+    // Treat data as stale immediately. Tanpa ini, kalau user balik ke standby
+    // setelah submit, cache lama bisa langsung memicu useEffect navigate ke
+    // visit yang baru saja selesai (visit sudah 'selesai', submit kedua aneh).
+    staleTime: 0,
+    gcTime: 0,
   })
 
   useEffect(() => {

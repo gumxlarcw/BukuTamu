@@ -5,6 +5,7 @@ import type {
   EvaluationSubmission,
   EvaluationResult,
   EvaluationFormData,
+  EvaluationVisitor,
   KonsultasiKualitas,
 } from '@/types/evaluation'
 
@@ -12,6 +13,7 @@ interface EvaluationFormBackendShape {
   indikator: Record<string, string>
   evaluation: unknown[]
   konsultasi_kualitas: KonsultasiKualitas[]
+  visitor: EvaluationVisitor | null
 }
 
 export const evaluationsApi = {
@@ -36,7 +38,8 @@ export const evaluationsApi = {
       status_data: Number(k.status_data),
       kualitas: k.kualitas !== null && k.kualitas !== undefined ? Number(k.kualitas) : null,
     }))
-    const formData: EvaluationFormData = { indicators, konsultasiKualitas }
+    const visitor = r.data.data?.visitor ?? null
+    const formData: EvaluationFormData = { indicators, konsultasiKualitas, visitor }
     return { ...r, data: { ...r.data, data: formData } }
   },
   submit: (id: number, data: EvaluationSubmission, kiosk_token: string) => {
@@ -73,9 +76,23 @@ export interface EvaluationSummaryIndicator {
   responden: number
 }
 
+export interface EvaluationSummaryMonthly {
+  bulan: number
+  ikm_score: number | string
+  responden: number | string
+}
+
+export interface EvaluationSummaryQuarterly {
+  triwulan: number
+  ikm_score: number | string
+  responden: number | string
+}
+
 export interface EvaluationSummary {
   visits: EvaluationSummaryVisit[]
   indicators: EvaluationSummaryIndicator[]
   overall: { ikm_score: number; total_responden: number }
+  monthly: EvaluationSummaryMonthly[]
+  quarterly: EvaluationSummaryQuarterly[]
   labels: Record<string, string>
 }
