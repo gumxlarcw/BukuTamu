@@ -45,7 +45,11 @@ block() {
 [[ "$cmd" =~ (^|[[:space:]\;\&\|])mv[[:space:]]+[^[:space:]]+[[:space:]]+/dev/null ]] && \
   block "mv to /dev/null is destructive."
 
-[[ "$cmd" =~ (^|[[:space:]\;\&\|])>[[:space:]]*/dev/sd[a-z]+ ]] && \
+# The '>' below must live in a variable: a bare '>' inside [[ =~ ]] is parsed
+# by bash as a redirection operator (syntax error). Expanding an unquoted
+# variable on the RHS of =~ stops bash re-tokenizing it, so '>' stays literal.
+re_blockdev_redirect='(^|[[:space:]\;\&\|])>[[:space:]]*/dev/sd[a-z]+'
+[[ "$cmd" =~ $re_blockdev_redirect ]] && \
   block "redirect to raw block device."
 
 # --- git foot-guns ---
