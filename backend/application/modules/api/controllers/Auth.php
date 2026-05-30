@@ -122,7 +122,7 @@ class Auth extends Api_base {
             'path'     => '/',
             'httponly'  => true,
             'samesite' => 'Strict',
-            'secure'   => isset($_SERVER['HTTPS']),
+            'secure'   => (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off'),
         ]);
 
         // Audit log
@@ -165,7 +165,7 @@ class Auth extends Api_base {
             'path'     => '/',
             'httponly'  => true,
             'samesite' => 'Strict',
-            'secure'   => isset($_SERVER['HTTPS']),
+            'secure'   => (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off'),
         ]);
 
         $this->json_response(['success' => true, 'data' => null, 'message' => 'Logout berhasil']);

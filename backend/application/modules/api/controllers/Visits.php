@@ -179,6 +179,9 @@ class Visits extends Api_base {
         if (!$status) {
             $this->json_response(['success' => false, 'message' => 'status diperlukan'], 400);
         }
+        if (!in_array($status, $this->valid_statuses(), true)) {
+            $this->json_response(['success' => false, 'message' => 'Status tidak valid'], 400);
+        }
 
         $visit = $this->db->get_where('tamdes_kunjungan', ['id_kunjungan' => $id])->row();
         if (!$visit) {

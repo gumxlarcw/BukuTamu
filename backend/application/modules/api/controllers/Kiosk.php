@@ -54,6 +54,12 @@ class Kiosk extends Api_base {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
 
+        // Anti-flood on this public no-auth endpoint: cap mass fake registrations
+        // per IP. The nama+notel/day dedup below handles honest double-taps; this
+        // trips only on scripted floods. 30/min matches the kiosk read endpoints
+        // and dwarfs any real check-in rate (one device handles a few per minute).
+        $this->require_rate_limit('kiosk/register', 30);
+
         $input = $this->get_json_input();
 
         // Strategy C: tolak cross layanan
@@ -180,6 +186,10 @@ class Kiosk extends Api_base {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $this->json_response(['success' => false, 'message' => 'Method not allowed'], 405);
         }
+
+        // Anti-flood on this public no-auth endpoint (same rationale as register).
+        // The id_user+layanan/60s dedup below covers double-taps; this caps floods.
+        $this->require_rate_limit('kiosk/visit', 30);
 
         $input   = $this->get_json_input();
 

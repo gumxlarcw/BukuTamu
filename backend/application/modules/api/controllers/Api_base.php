@@ -9,10 +9,16 @@ class Api_base extends CI_Controller {
         parent::__construct();
         $this->load->library('JWT_Helper');
 
-        // CORS headers
-        $allowed_origins = ['http://localhost:5173'];
+        // CORS headers. Prod serves the SPA same-origin as /api (no CORS needed)
+        // or via FRONTEND_URL. The Vite dev server (:5173) reaches /api through
+        // its own proxy (vite.config.ts), so it needs no CORS entry either —
+        // only allow it when a dev explicitly opts in via CORS_ALLOW_DEV=1.
+        $allowed_origins = [];
         $prod_origin = $this->_env('FRONTEND_URL');
         if ($prod_origin) $allowed_origins[] = $prod_origin;
+        if ($this->_env('CORS_ALLOW_DEV') === '1') {
+            $allowed_origins[] = 'http://localhost:5173';
+        }
 
         $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
         if (in_array($origin, $allowed_origins)) {
@@ -353,6 +359,16 @@ class Api_base extends CI_Controller {
             }
         }
         return 'selesai';
+    }
+
+    /**
+     * Canonical visit status values — mirrors the `tamdes_kunjungan.status` ENUM
+     * and the frontend `VisitStatus` union (src/types/visit.ts). Reject any
+     * inbound status from a client PUT that isn't in this set, before the DB
+     * write, so MySQL can't silently coerce a bad value to ''.
+     */
+    protected function valid_statuses() {
+        return ['antri', 'dipanggil', 'proses', 'diproses', 'menunggu_evaluasi', 'selesai'];
     }
 
     /**

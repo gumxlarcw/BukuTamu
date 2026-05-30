@@ -122,6 +122,21 @@ class Evaluations extends Api_base {
                 ], 400);
             }
 
+            // Throttle re-submits on this no-auth (kiosk-token-only) endpoint so a
+            // captured/still-valid token can't spam delete+reinsert. First submit
+            // (status menunggu_evaluasi) is never throttled; a genuine correction is
+            // allowed once the cooldown elapses.
+            $cooldown_seconds = 30;
+            if ($visit->status === 'selesai' && $visit->selesai_timestamp) {
+                $elapsed = time() - strtotime($visit->selesai_timestamp);
+                if ($elapsed >= 0 && $elapsed < $cooldown_seconds) {
+                    $this->json_response([
+                        'success' => false,
+                        'message' => 'Evaluasi baru saja disimpan. Tunggu beberapa saat sebelum mengubah.',
+                    ], 429);
+                }
+            }
+
             // Delete existing evaluation rows to prevent duplicates
             $this->db->where('id_kunjungan', $id)->delete('tamdes_evaluasi_detail');
 

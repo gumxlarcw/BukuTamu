@@ -156,6 +156,7 @@ class Guests extends Api_base {
 
     /** GET /api/guests/:id/photo — serve photo as image */
     public function photo($id) {
+        $this->require_auth();
         $row = $this->db->select('foto')->get_where('tamdes_buku', ['id_user' => $id])->row();
         if (!$row || !$row->foto) {
             http_response_code(404);
