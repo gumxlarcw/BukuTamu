@@ -15,6 +15,8 @@ export interface Guest {
   nama_instansi: string
   pemanfaatan: number
   pemanfaatan_lainnya: string
+  pengaduan?: string | null
+  registered_via?: string | null
   face_descriptor: number[] | null
   tgldatang: string
 }

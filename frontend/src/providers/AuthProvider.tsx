@@ -14,7 +14,12 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  // Start "loading" only on pages that actually run authApi.check() below
+  // (admin/login). Kiosk pages never check, so they begin un-loaded — this
+  // lazy initializer replaces a synchronous setIsLoading(false) in the effect.
+  const [isLoading, setIsLoading] = useState(
+    () => window.location.pathname.startsWith('/admin') || window.location.pathname === '/login',
+  )
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const doLogout = useCallback(async () => {
@@ -48,10 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const isAdminPage = window.location.pathname.startsWith('/admin') || window.location.pathname === '/login'
-    if (!isAdminPage) {
-      setIsLoading(false)
-      return
-    }
+    if (!isAdminPage) return // isLoading already false via lazy init; skip the auth check
     authApi.check()
       .then((res) => setUser(res.data.data))
       .catch(() => setUser(null))
@@ -74,6 +76,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// Co-located with its provider by React convention. Splitting into a separate
+// file (10 importers) is disproportionate churn for a dev-only HMR lint rule
+// with zero runtime/build impact.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')

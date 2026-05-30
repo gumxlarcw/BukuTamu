@@ -146,13 +146,13 @@ export default function GuestListPage() {
                   kategori_instansi: KATEGORI_INSTANSI_OPTIONS.find(o => o.value === Number(g.kategori_instansi))?.label ?? '',
                   kategori_lainnya: g.kategori_lainnya ?? '',
                   nama_instansi: g.nama_instansi,
-                  pemanfaatan: PEMANFAATAN_OPTIONS.find(o => o.value === Number((g as any).pemanfaatan))?.label ?? '',
-                  pemanfaatan_lainnya: (g as any).pemanfaatan_lainnya ?? '',
+                  pemanfaatan: PEMANFAATAN_OPTIONS.find(o => o.value === Number(g.pemanfaatan))?.label ?? '',
+                  pemanfaatan_lainnya: g.pemanfaatan_lainnya ?? '',
                   disabilitas: DISABILITAS_OPTIONS.find(o => o.value === Number(g.disabilitas))?.label ?? '',
                   jenis_disabilitas: Number(g.disabilitas) === 1 ? (JENIS_DISABILITAS_OPTIONS.find(o => o.value === Number(g.jenis_disabilitas))?.label ?? '') : '',
-                  pengaduan: (g as any).pengaduan ?? '',
+                  pengaduan: g.pengaduan ?? '',
                   tgl_daftar: g.tgldatang,
-                  sumber: (g as any).registered_via ?? '',
+                  sumber: g.registered_via ?? '',
                 })))
               })
             }}
@@ -464,13 +464,13 @@ export default function GuestListPage() {
                 <DetailField label="Pekerjaan" value={PEKERJAAN_OPTIONS.find(o => o.value === Number(viewGuest.pekerjaan))?.label ?? '-'} />
                 <DetailField label="Kategori Instansi" value={KATEGORI_INSTANSI_OPTIONS.find(o => o.value === Number(viewGuest.kategori_instansi))?.label ?? '-'} />
                 <DetailField label="Nama Instansi" value={viewGuest.nama_instansi || '-'} />
-                <DetailField label="Pemanfaatan" value={PEMANFAATAN_OPTIONS.find(o => o.value === Number((viewGuest as any).pemanfaatan))?.label ?? '-'} />
+                <DetailField label="Pemanfaatan" value={PEMANFAATAN_OPTIONS.find(o => o.value === Number(viewGuest.pemanfaatan))?.label ?? '-'} />
                 <DetailField label="Disabilitas" value={DISABILITAS_OPTIONS.find(o => o.value === Number(viewGuest.disabilitas))?.label ?? '-'} />
                 {Number(viewGuest.disabilitas) === 1 && (
                   <DetailField label="Jenis Disabilitas" value={JENIS_DISABILITAS_OPTIONS.find(o => o.value === Number(viewGuest.jenis_disabilitas))?.label ?? '-'} />
                 )}
                 <DetailField label="Tgl Datang" value={viewGuest.tgldatang || '-'} />
-                <DetailField label="Sumber" value={(viewGuest as any).registered_via === 'kiosk' ? 'Kiosk' : (viewGuest as any).registered_via?.startsWith('admin:') ? `Admin (${(viewGuest as any).registered_via.replace('admin:', '')})` : '-'} />
+                <DetailField label="Sumber" value={viewGuest.registered_via === 'kiosk' ? 'Kiosk' : viewGuest.registered_via?.startsWith('admin:') ? `Admin (${viewGuest.registered_via?.replace('admin:', '')})` : '-'} />
               </div>
 
               {/* Visit history */}

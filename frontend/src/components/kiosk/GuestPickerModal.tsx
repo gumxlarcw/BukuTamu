@@ -24,6 +24,10 @@ export function GuestPickerModal({ open, onClose, onSelect }: GuestPickerModalPr
   // Auto-focus search on open
   useEffect(() => {
     if (open) {
+      // Reset the search box each time the modal opens — the component stays
+      // mounted (returns null when closed), so state persists between opens.
+      // Intentional open→reset sync, not a derivable value.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSearch('')
       setTimeout(() => inputRef.current?.focus(), 100)
     }

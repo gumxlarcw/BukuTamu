@@ -28,6 +28,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// Co-located with its provider by React convention. Splitting into a separate
+// file is disproportionate churn for a dev-only HMR lint rule with zero
+// runtime/build impact.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTheme() {
   const ctx = useContext(ThemeContext)
   if (!ctx) throw new Error('useTheme must be used within ThemeProvider')

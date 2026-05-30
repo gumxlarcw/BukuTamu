@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import axios from 'axios'
 import { toast } from 'sonner'
 import { usersApi, type AdminUser } from '@/api/users'
 import { Button } from '@/components/ui/button'
@@ -48,25 +49,25 @@ export default function UserManagementPage() {
   const createMut = useMutation({
     mutationFn: () => usersApi.create(form),
     onSuccess: () => { toast.success('User berhasil dibuat'); setCreateOpen(false); setForm({ username: '', password: '', nama: '', role: 'operator' }); queryClient.invalidateQueries({ queryKey: ['admin-users'] }) },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Gagal membuat user'),
+    onError: (e: unknown) => toast.error((axios.isAxiosError(e) ? e.response?.data?.message : null) || 'Gagal membuat user'),
   })
 
   const updateMut = useMutation({
     mutationFn: () => usersApi.update(editUser!.id, editForm),
     onSuccess: () => { toast.success('User berhasil diupdate'); setEditUser(null); queryClient.invalidateQueries({ queryKey: ['admin-users'] }) },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Gagal update'),
+    onError: (e: unknown) => toast.error((axios.isAxiosError(e) ? e.response?.data?.message : null) || 'Gagal update'),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => usersApi.delete(id),
     onSuccess: () => { toast.success('User dihapus'); setDeleteId(null); queryClient.invalidateQueries({ queryKey: ['admin-users'] }) },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Gagal menghapus'),
+    onError: (e: unknown) => toast.error((axios.isAxiosError(e) ? e.response?.data?.message : null) || 'Gagal menghapus'),
   })
 
   const pwMut = useMutation({
     mutationFn: () => usersApi.changePassword(pwForm),
     onSuccess: () => { toast.success('Password berhasil diubah'); setPwOpen(false); setPwForm({ old_password: '', new_password: '' }) },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Gagal mengubah password'),
+    onError: (e: unknown) => toast.error((axios.isAxiosError(e) ? e.response?.data?.message : null) || 'Gagal mengubah password'),
   })
 
   return (

@@ -44,6 +44,10 @@ export default function DtsenFormPage() {
 
   useEffect(() => {
     if (existing) {
+      // Hydrate the editable form once the saved DTSEN row loads. Legitimate
+      // async-data → local-state sync (form then diverges as the user edits),
+      // not a derivable value — the one extra render is acceptable here.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm({
         jenis_konsultasi_dtsen: existing.jenis_konsultasi_dtsen,
         hasil: existing.hasil,

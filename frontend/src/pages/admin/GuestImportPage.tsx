@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { guestsApi } from '@/api/guests'
+import type { Guest } from '@/types/guest'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react'
 
@@ -57,7 +58,10 @@ export default function GuestImportPage() {
     let success = 0, failed = 0
     for (const row of rows) {
       try {
-        await guestsApi.create(row as any)
+        // CSV cells are all strings; the backend coerces them. Cast through
+        // unknown because ParsedRow's string index signature doesn't overlap
+        // the numeric fields in Partial<Guest>.
+        await guestsApi.create(row as unknown as Partial<Guest>)
         success++
       } catch {
         failed++

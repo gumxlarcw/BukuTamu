@@ -77,7 +77,7 @@ export default function RespondenTahunanPage() {
       tahun, q: search || undefined, limit: 10000, triwulan: triwulan || undefined, ...(skdFilter ? { skd: '1' } : {}),
     }).then(r => {
       const d = r.data.data as RespondenRow[]
-      exportCsv(`responden-${tahun}${triwulan ? `-tw${triwulan}` : ''}${skdFilter ? '-skd' : ''}`, d.map((row: any) => ({
+      exportCsv(`responden-${tahun}${triwulan ? `-tw${triwulan}` : ''}${skdFilter ? '-skd' : ''}`, d.map((row: RespondenRow) => ({
         id_user: row.id_user,
         nama: row.nama,
         email: row.email ?? '',
